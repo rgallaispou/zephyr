@@ -10,6 +10,7 @@
 #include <sample_usbd.h>
 #include "feedback.h"
 
+#include <zephyr/audio/codec.h>
 #include <zephyr/device.h>
 #include <zephyr/usb/usbd.h>
 #include <zephyr/usb/class/usbd_uac2.h>
@@ -287,6 +288,35 @@ int main(void)
 		printk("Failed to configure TX stream: %d\n", ret);
 		return 0;
 	}
+
+#ifdef CONFIG_AUDIO_CODEC
+	/* Configure audio codec */
+	const struct device *dev_codec = DEVICE_DT_GET(DT_NODELABEL(audio_codec));
+
+	if (!device_is_ready(dev_codec)) {
+		printf("Codec %s not ready\n", dev_codec->name);
+		return 0;
+	}
+
+	struct audio_codec_cfg codec_cfg = {
+		.dai_route = AUDIO_ROUTE_PLAYBACK,
+		.dai_type = AUDIO_DAI_TYPE_I2S,
+		.dai_cfg.i2s = {
+			.word_size = SAMPLE_BIT_WIDTH,
+			.format = I2S_FMT_DATA_FORMAT_I2S,
+			.options = I2S_OPT_FRAME_CLK_SLAVE,
+			.frame_clk_freq = SAMPLE_FREQUENCY,
+			.mem_slab = &i2s_tx_slab,
+			.block_size = MAX_BLOCK_SIZE,
+		},
+	};
+
+	ret = audio_codec_configure(dev_codec, &codec_cfg);
+	if (ret < 0) {
+		printf("Failed to configure audio codec: %d\n", ret);
+		return 0;
+	}
+#endif
 
 	main_ctx.fb = feedback_init();
 

@@ -86,8 +86,8 @@
 
 	wm8904_fll_ref: sai1a-mclk {
 		compatible = "fixed-clock";
-		/* 1.536 GHz / 136 */
-		clock-frequency = <11294117>;
+		/* 1.536 GHz / 125 */
+		clock-frequency = <12288000>;
 		#clock-cells = <0>;
 	};
 };
@@ -232,7 +232,7 @@
  */
 &ic7 {
 	pll-src = <2>;
-	ic-div = <136>;
+	ic-div = <125>;
 	status = "okay";
 };
 
@@ -724,7 +724,7 @@ zephyr_jpegenc: &jpeg {
  *
  * SAI1 pins are multiplexed with the MCU trace signals.
  */
-&sai1_a {
+i2s_tx: &sai1_a {
 	pinctrl-0 = <&sai1_mclk_a_pg7 &sai1_sd_a_pb7
 		     &sai1_fs_a_pb0 &sai1_sck_a_pb6>;
 	pinctrl-names = "default";
@@ -740,4 +740,9 @@ zephyr_jpegenc: &jpeg {
 	synchronous;
 	dma-names = "rx";
 	status = "okay";
+};
+
+/* Force operation in FS mode */
+&zephyr_udc0 {
+       maximum-speed = "full-speed";
 };

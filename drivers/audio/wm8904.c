@@ -630,7 +630,7 @@ static int wm8904_sysclk_cfg(const struct device *dev, struct audio_codec_cfg *c
 		LOG_DBG("FLL selected as SYSCLK source");
 
 		/* Set SYSCLK to Target Clock */
-		dev_data->sysclk = cfg->mclk_freq;
+		dev_data->sysclk = dev_data->mclk_freq;
 
 		/* FLL reference clock is the codec's MCLK input */
 		dev_data->fll.f_ref = dev_data->mclk_freq;
