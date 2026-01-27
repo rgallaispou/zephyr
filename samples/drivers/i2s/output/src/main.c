@@ -5,6 +5,7 @@
  */
 
 #include <stdio.h>
+#include <zephyr/audio/codec.h>
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/i2s.h>
 #include <zephyr/sys/iterable_sections.h>
@@ -32,11 +33,12 @@ static void fill_buf(int16_t *tx_block, int att)
 	int r_idx;
 
 	for (int i = 0; i < SAMPLE_NO; i++) {
-		/* Left channel is sine wave */
-		tx_block[2 * i] = data[i] / (1 << att);
-		/* Right channel is same sine wave, shifted by 90 degrees */
-		r_idx = (i + (ARRAY_SIZE(data) / 4)) % ARRAY_SIZE(data);
-		tx_block[2 * i + 1] = data[r_idx] / (1 << att);
+		/* Left and right channel are same sine wave */
+		tx_block[2 * i] = data[i];
+		tx_block[2 * i + 1] = data[i];
+//		/* Right channel is same sine wave, shifted by 90 degrees */
+//		r_idx = (i + (ARRAY_SIZE(data) / 4)) % ARRAY_SIZE(data);
+//		tx_block[2 * i + 1] = data[r_idx] / (1 << att);
 	}
 }
 
@@ -68,11 +70,20 @@ int main(void)
 		printf("I2S device not ready\n");
 		return -ENODEV;
 	}
+
+#ifdef CONFIG_AUDIO_CODEC
+	const struct device *dev_codec = DEVICE_DT_GET(DT_NODELABEL(audio_codec));
+	if (!device_is_ready(dev_codec)) {
+		printf("Codec %s not ready\n", dev_codec->name);
+		return 0;
+	}
+#endif
+
 	/* Configure I2S stream */
 	i2s_cfg.word_size = 16U;
 	i2s_cfg.channels = 2U;
 	i2s_cfg.format = I2S_FMT_DATA_FORMAT_I2S;
-	i2s_cfg.frame_clk_freq = 44100;
+	i2s_cfg.frame_clk_freq = 48000;
 	i2s_cfg.block_size = BLOCK_SIZE;
 	i2s_cfg.timeout = 2000;
 	/* Configure the Transmit port as Controller */
@@ -87,6 +98,28 @@ int main(void)
 		printf("Failed to configure I2S stream\n");
 		return ret;
 	}
+
+#ifdef CONFIG_AUDIO_CODEC
+	/* Configure audio codec */
+	struct audio_codec_cfg codec_cfg = {
+		.dai_route = AUDIO_ROUTE_PLAYBACK,
+		.dai_type = AUDIO_DAI_TYPE_I2S,
+		.dai_cfg.i2s = {
+			.word_size = 16U,
+			.format = I2S_FMT_DATA_FORMAT_I2S,
+			.options = I2S_OPT_FRAME_CLK_SLAVE,
+			.frame_clk_freq = 48000,
+			.mem_slab = &tx_0_mem_slab,
+			.block_size = BLOCK_SIZE,
+		},
+	};
+
+	ret = audio_codec_configure(dev_codec, &codec_cfg);
+	if (ret < 0) {
+		printf("Failed to configure audio codec: %d\n", ret);
+		return 0;
+	}
+#endif
 
 	/* Prepare all TX blocks */
 	for (tx_idx = 0; tx_idx < NUM_BLOCKS; tx_idx++) {
@@ -118,6 +151,11 @@ int main(void)
 		if (ret < 0) {
 			printf("Could not write TX buffer %d\n", tx_idx);
 			return ret;
+		}
+
+		/* PATCH: Send blocks forever */
+		if (tx_idx == NUM_BLOCKS) {
+			tx_idx = 0;
 		}
 	}
 	/* Drain TX queue */

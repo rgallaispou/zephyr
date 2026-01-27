@@ -1,0 +1,40 @@
+//
+//
+//
+
+/ {
+	aliases {
+		i2s-tx = &i2s_tx;
+	};
+};
+
+audio_codec: &wm8904 {
+	clocks = <&rcc STM32_SRC_IC7 NO_SEL>;
+	clock-names = "mclk";
+};
+
+/*
+ * f_IC7 = 1.536 GHz / 125
+ *       = 12.288 MHz
+ *       = 256 * 48 kHz
+ */
+&ic7 {
+	pll-src = <2>;
+	ic-div = <125>;
+	status = "okay";
+};
+
+&gpdma1 {
+	status = "okay";
+};
+
+i2s_tx: &sai1_a {
+	clocks = <&rcc STM32_CLOCK(APB2, 21)>, <&rcc STM32_SRC_IC7 SAI1_SEL(2)>;
+	pinctrl-0 = <&sai1_mclk_a_pg7 &sai1_sd_a_pb7 &sai1_fs_a_pb0 &sai1_sck_a_pb6>;
+	pinctrl-names = "default";
+	status = "okay";
+
+	mclk-enable;
+	mclk-divider = "div-256";
+	dma-names = "tx";
+};
