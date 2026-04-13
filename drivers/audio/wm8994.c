@@ -30,594 +30,7 @@ struct wm8994_driver_config {
 
 #define DEV_CFG(dev) ((const struct wm8994_driver_config *const)dev->config)
 
-static void wm8994_write_reg(const struct device *dev, uint16_t reg, uint16_t val);
-static void wm8994_read_reg(const struct device *dev, uint16_t reg, uint16_t *val);
-static void wm8994_update_reg(const struct device *dev, uint16_t reg, uint16_t mask, uint16_t val);
-static void wm8994_soft_reset(const struct device *dev);
-#if DEBUG_WM8994_REGISTER
-static void wm8994_read_all_reg(const struct device *dev, uint16_t endAddress);
-#endif
-
-static void wm8994_configure_output(const struct device *dev);
-
-static void wm8994_configure_input(const struct device *dev);
-
-static int wm8994_apply_properties(const struct device *dev);
-
-static int wm8994_start_sequence(const struct device *dev, wm8994_sequence_id_t id)
-{
-	uint32_t delayUs = 93000U;
-	uint16_t sequenceStat = 0U;
-
-	switch (id) {
-	case kwm8994_SequenceDACToHeadphonePowerUp:
-		delayUs = 93000U;
-		break;
-	case kwm8994_SequenceAnalogueInputPowerUp:
-		delayUs = 75000U;
-		break;
-	case kwm8994_SequenceChipPowerDown:
-		delayUs = 32000U;
-		break;
-	case kwm8994_SequenceSpeakerSleep:
-		delayUs = 2000U;
-		break;
-	case kwm8994_SequenceSpeakerWake:
-		delayUs = 2000U;
-		break;
-	default:
-		delayUs = 93000U;
-		break;
-	}
-
-	wm8994_write_reg(dev, WM8994_REG_WRITE_SEQ_CTRL_1, WM8994_WSEQ_ENA);
-	wm8994_write_reg(dev, WM8994_REG_WRITE_SEQ_CTRL_2, (uint16_t)id);
-	while (delayUs != 0U) {
-		wm8994_read_reg(dev, WM8994_REG_WRITE_SEQ_CTRL_3, &sequenceStat);
-		if ((sequenceStat & 1U) == 0U) {
-			break;
-		}
-		k_msleep(1U);
-		delayUs -= 1000U;
-	}
-
-	return (sequenceStat & 1U) == 0U ? 0 : -EBUSY;
-}
-
-static int wm8994_get_clock_divider(uint32_t inputClock, uint32_t maxClock, uint16_t *divider)
-{
-	if ((inputClock >> 2U) > maxClock) {
-		return -EINVAL;
-	}
-
-	/* fll reference clock divider */
-	if (inputClock > maxClock) {
-		if ((inputClock >> 1U) > maxClock) {
-			*divider = 2U;
-		} else {
-			*divider = 1U;
-		}
-	} else {
-		*divider = 0U;
-	}
-
-	return 0;
-}
-
-static int wm8994_protocol_config(const struct device *dev, audio_dai_type_t dai_type)
-{
-	wm8994_protocol_t proto;
-
-	switch (dai_type) {
-	case AUDIO_DAI_TYPE_I2S:
-		proto = kwm8994_BusI2S;
-		break;
-	case AUDIO_DAI_TYPE_LEFT_JUSTIFIED:
-		proto = kwm8994_BusLeftJustified;
-		break;
-	case AUDIO_DAI_TYPE_RIGHT_JUSTIFIED:
-		proto = kwm8994_BusRightJustified;
-		break;
-	case AUDIO_DAI_TYPE_PCMA:
-		proto = kwm8994_BusPCMA - 1;
-		break;
-	case AUDIO_DAI_TYPE_PCMB:
-		proto = kwm8994_BusPCMB | 0x10U;
-		break;
-	default:
-		return -EINVAL;
-	}
-
-	wm8994_update_reg(dev, WM8994_REG_IFACE0, WM8994_IFACE0_FORMAT_MASK, (uint16_t)proto);
-
-	LOG_DBG("Codec protocol: %#x", proto);
-	return 0;
-}
-
-static int wm8994_audio_fmt_config(const struct device *dev, audio_dai_cfg_t *cfg, uint32_t mclk)
-{
-	uint32_t val;
-	uint16_t word_size = cfg->i2s.word_size;
-	uint32_t ratio = mclk / cfg->i2s.frame_clk_freq;
-
-	switch (word_size) {
-	case 16:
-		val = WM8994_IFACE0_WL_16BITS;
-		break;
-	case 20:
-		val = WM8994_IFACE0_WL_20BITS;
-		break;
-	case 24:
-		val = WM8994_IFACE0_WL_24BITS;
-		break;
-	case 32:
-		val = WM8994_IFACE0_WL_32BITS;
-		break;
-	default:
-		LOG_WRN("Invalid codec bit width: %d", cfg->i2s.word_size);
-		return -EINVAL;
-	}
-
-	wm8994_update_reg(dev, WM8994_REG_IFACE0, WM8994_IFACE0_WL_MASK, WM8994_IFACE0_WL(val));
-
-	switch (cfg->i2s.frame_clk_freq) {
-	case kwm8994_AudioSampleRate8kHz:
-		val = 0x15U;
-		break;
-	case kwm8994_AudioSampleRate11025Hz:
-		val = 0x04U;
-		break;
-	case kwm8994_AudioSampleRate12kHz:
-		val = 0x14U;
-		break;
-	case kwm8994_AudioSampleRate16kHz:
-		val = 0x13U;
-		break;
-	case kwm8994_AudioSampleRate22050Hz:
-		val = 0x02U;
-		break;
-	case kwm8994_AudioSampleRate24kHz:
-		val = 0x12U;
-		break;
-	case kwm8994_AudioSampleRate32kHz:
-		val = 0x11U;
-		break;
-	case kwm8994_AudioSampleRate44100Hz:
-		val = 0x00U;
-		break;
-	case kwm8994_AudioSampleRate48kHz:
-		val = 0x10U;
-		break;
-	case kwm8994_AudioSampleRate88200Hz:
-		val = 0x06U;
-		break;
-	case kwm8994_AudioSampleRate96kHz:
-		val = 0x16U;
-		break;
-	default:
-		LOG_WRN("Invalid codec sample rate: %d", cfg->i2s.frame_clk_freq);
-		return -EINVAL;
-	}
-
-	wm8994_write_reg(dev, WM8994_REG_ADDCTL3, val);
-
-	switch (ratio) {
-	case 64:
-		val = 0x00U;
-		break;
-	case 128:
-		val = 0x02U;
-		break;
-	case 192:
-		val = 0x04U;
-		break;
-	case 256:
-		val = 0x06U;
-		break;
-	case 384:
-		val = 0x08U;
-		break;
-	case 512:
-		val = 0x0AU;
-		break;
-	case 768:
-		val = 0x0CU;
-		break;
-	case 1024:
-		val = 0x0EU;
-		break;
-	case 1536:
-		val = 0x12U;
-		break;
-	case 3072:
-		val = 0x14U;
-		break;
-	case 6144:
-		val = 0x16U;
-		break;
-	default:
-		LOG_WRN("Invalid codec ratio: %d", ratio);
-		return -EINVAL;
-	}
-
-	wm8994_write_reg(dev, WM8994_REG_CLK4, val);
-
-	return 0;
-}
-
-static int wm8994_out_update(const struct device *dev, audio_channel_t channel, uint16_t val,
-			     uint16_t mask)
-{
-	switch (channel) {
-	case AUDIO_CHANNEL_FRONT_LEFT:
-		wm8994_update_reg(dev, WM8994_REG_LOUT2, mask, val);
-		return 0;
-
-	case AUDIO_CHANNEL_FRONT_RIGHT:
-		wm8994_update_reg(dev, WM8994_REG_ROUT2, mask, val);
-		return 0;
-
-	case AUDIO_CHANNEL_HEADPHONE_LEFT:
-		wm8994_update_reg(dev, WM8994_REG_LOUT1, mask, val);
-		return 0;
-
-	case AUDIO_CHANNEL_HEADPHONE_RIGHT:
-		wm8994_update_reg(dev, WM8994_REG_ROUT1, mask, val);
-		return 0;
-
-	case AUDIO_CHANNEL_ALL:
-		wm8994_update_reg(dev, WM8994_REG_LOUT1, mask, val);
-		wm8994_update_reg(dev, WM8994_REG_ROUT1, mask, val);
-		wm8994_update_reg(dev, WM8994_REG_LOUT2, mask, val);
-		wm8994_update_reg(dev, WM8994_REG_ROUT2, mask, val);
-		return 0;
-
-	default:
-		return -EINVAL;
-	}
-}
-
-static int wm8994_out_volume_config(const struct device *dev, audio_channel_t channel, int volume)
-{
-	/* Set volume values with VU = 0 */
-	const uint16_t val = WM8994_REGVAL_OUT_VOL(1, 0, volume);
-	const uint16_t mask =
-		wm8994_REGMASK_OUT_VU | wm8994_REGMASK_OUT_ZC | wm8994_REGMASK_OUT_VOL;
-
-	return wm8994_out_update(dev, channel, val, mask);
-}
-
-static int wm8994_out_mute_config(const struct device *dev, audio_channel_t channel, bool mute)
-{
-	uint8_t val = 0U;
-
-	switch (channel) {
-	case AUDIO_CHANNEL_FRONT_LEFT:
-		val = mute ? 2U : 0U;
-		wm8994_update_reg(dev, WM8994_REG_CLASSD1, WM8994_L_CH_MUTE_MASK, val);
-		return 0;
-
-	case AUDIO_CHANNEL_FRONT_RIGHT:
-		val = mute ? 1U : 0U;
-		wm8994_update_reg(dev, WM8994_REG_CLASSD1, WM8994_R_CH_MUTE_MASK, val);
-		return 0;
-
-	case AUDIO_CHANNEL_HEADPHONE_LEFT:
-		val = mute ? 2U : 0U;
-		wm8994_update_reg(dev, WM8994_REG_POWER2, WM8994_L_CH_MUTE_MASK, val);
-		return 0;
-
-	case AUDIO_CHANNEL_HEADPHONE_RIGHT:
-		val = mute ? 1U : 0U;
-		wm8994_update_reg(dev, WM8994_REG_POWER2, WM8994_R_CH_MUTE_MASK, val);
-		return 0;
-
-	case AUDIO_CHANNEL_ALL:
-		val = mute ? 3U : 0U;
-		wm8994_update_reg(dev, wm8994_REG_CLASSD1,
-				  (wm8994_L_CH_MUTE_MASK | wm8994_R_CH_MUTE_MASK), val);
-		wm8994_update_reg(dev, wm8994_REG_POWER2,
-				  (wm8994_L_CH_MUTE_MASK | wm8994_R_CH_MUTE_MASK), val);
-		return 0;
-
-	default:
-		return -EINVAL;
-	}
-}
-
-static int wm8994_in_update(const struct device *dev, audio_channel_t channel, uint16_t mask,
-			    uint16_t val)
-{
-	switch (channel) {
-	case AUDIO_CHANNEL_FRONT_LEFT:
-		wm8994_update_reg(dev, wm8994_REG_LINVOL, mask, val);
-		return 0;
-
-	case AUDIO_CHANNEL_FRONT_RIGHT:
-		wm8994_update_reg(dev, wm8994_REG_RINVOL, mask, val);
-		return 0;
-
-	case AUDIO_CHANNEL_ALL:
-		wm8994_update_reg(dev, wm8994_REG_LINVOL, mask, val);
-		wm8994_update_reg(dev, wm8994_REG_RINVOL, mask, val);
-		return 0;
-
-	default:
-		return -EINVAL;
-	}
-}
-
-static int wm8994_in_volume_config(const struct device *dev, audio_channel_t channel, int volume)
-{
-	const uint16_t val = WM8994_REGVAL_IN_VOL(1, 0, 0, volume);
-	const uint16_t mask = WM8994_REGMASK_IN_MUTE;
-
-	return wm8994_in_update(dev, channel, mask, val);
-}
-
-static int wm8994_in_mute_config(const struct device *dev, audio_channel_t channel, bool mute)
-{
-	const uint16_t val = WM8994_REGVAL_IN_VOL(1, mute, 0, 0);
-	const uint16_t mask = wm8994_REGMASK_IN_MUTE;
-
-	return wm8994_in_update(dev, channel, mask, val);
-}
-
-static int wm8994_route_input(const struct device *dev, audio_channel_t channel, uint32_t input)
-{
-	uint8_t reg;
-
-	switch (channel) {
-	case AUDIO_CHANNEL_FRONT_LEFT:
-		reg = WM8994_REG_LEFT_INPUT_PGA;
-		break;
-
-	case AUDIO_CHANNEL_FRONT_RIGHT:
-		reg = WM8994_REG_RIGHT_INPUT_PGA;
-		break;
-
-	default:
-		return -EINVAL;
-	}
-
-	/* Input PGA source */
-	wm8994_write_reg(dev, reg, input);
-	return 0;
-}
-
-static int wm8994_route_output(const struct device *dev, audio_channel_t channel, uint32_t output)
-{
-	/* Output MIXER */
-	switch (channel) {
-	case AUDIO_CHANNEL_HEADPHONE_LEFT:
-		wm8994_write_reg(dev, wm8994_REG_LEFT_HEADPHONE_MIXER, output);
-		break;
-	case AUDIO_CHANNEL_HEADPHONE_RIGHT:
-		wm8994_write_reg(dev, wm8994_REG_RIGHT_HEADPHONE_MIXER, output);
-		break;
-	case AUDIO_CHANNEL_FRONT_LEFT:
-	case AUDIO_CHANNEL_REAR_LEFT:
-	case AUDIO_CHANNEL_SIDE_LEFT:
-		wm8994_write_reg(dev, wm8994_REG_LEFT_SPEAKER_MIXER, output);
-		break;
-	case AUDIO_CHANNEL_FRONT_RIGHT:
-	case AUDIO_CHANNEL_REAR_RIGHT:
-	case AUDIO_CHANNEL_SIDE_RIGHT:
-		wm8994_write_reg(dev, wm8994_REG_RIGHT_SPEAKER_MIXER, output);
-		break;
-	default:
-		break;
-	}
-
-	return 0;
-}
-
-static void wm8994_set_master_clock(const struct device *dev, audio_dai_cfg_t *cfg, uint32_t sysclk)
-{
-	uint32_t sampleRate = cfg->i2s.frame_clk_freq;
-	uint32_t bitWidth = cfg->i2s.word_size;
-	uint32_t bclkDiv = 0U;
-	uint16_t regClkDiv = 0U, sysClkDiv = 0U;
-	int ret = 0;
-
-	wm8994_get_clock_divider(sysclk, wm8994_MAX_DSP_CLOCK, &sysClkDiv);
-	sysclk /= 1 << sysClkDiv;
-
-	bclkDiv = sysclk / (sampleRate * bitWidth * 2U);
-
-	switch (bclkDiv) {
-	case 1:
-		regClkDiv = 0U;
-		break;
-	case 2:
-		regClkDiv = 2U;
-		break;
-	case 3:
-		regClkDiv = 3U;
-		break;
-	case 4:
-		regClkDiv = 4U;
-		break;
-	case 6:
-		regClkDiv = 6U;
-		break;
-	case 8:
-		regClkDiv = 7U;
-		break;
-	case 12:
-		regClkDiv = 9U;
-		break;
-	case 16:
-		regClkDiv = 10U;
-		break;
-	case 24:
-		regClkDiv = 11U;
-		break;
-	case 32:
-		regClkDiv = 13U;
-		break;
-
-	default:
-		ret = -1;
-		break;
-	}
-	if (ret == 0) {
-		wm8994_update_reg(dev, wm8994_REG_CLOCK2, wm8994_CLOCK2_BCLK_DIV_MASK,
-				  (uint16_t)regClkDiv);
-		wm8994_write_reg(dev, wm8994_REG_IFACE2, (uint16_t)(bitWidth * 2U));
-	} else {
-		LOG_ERR("Unsupported divider.");
-	}
-}
-
-static int wm8994_configure(const struct device *dev, struct audio_codec_cfg *cfg)
-{
-	uint32_t sysClk = 0;
-	uint16_t clockDiv = 0U;
-
-	const struct wm8994_driver_config *const dev_cfg = DEV_CFG(dev);
-
-	if (cfg->dai_type >= AUDIO_DAI_TYPE_INVALID) {
-		LOG_ERR("dai_type not supported");
-		return -EINVAL;
-	}
-
-	if (dev_cfg->clock_source == 0) {
-		int err = clock_control_on(dev_cfg->mclk_dev, dev_cfg->mclk_name);
-
-		if (err < 0) {
-			LOG_ERR("MCLK clock source enable fail: %d", err);
-		}
-
-		err = clock_control_get_rate(dev_cfg->mclk_dev, dev_cfg->mclk_name,
-					     &cfg->mclk_freq);
-		if (err < 0) {
-			LOG_ERR("MCLK clock source freq acquire fail: %d", err);
-		}
-	}
-
-	wm8994_soft_reset(dev);
-	if (cfg->dai_route == AUDIO_ROUTE_BYPASS) {
-		return 0;
-	}
-
-	/* disable internal osc/FLL2/FLL3/FLL */
-	wm8994_write_reg(dev, WM8994_REG_PLL2, 0);
-	wm8994_update_reg(dev, WM8994_REG_FLL_CTRL_1, 1U, 0U);
-	wm8994_write_reg(dev, WM8994_REG_CLOCK2, 0x9E4);
-	wm8994_write_reg(dev, WM8994_REG_POWER1, 0x1FE);
-	wm8994_write_reg(dev, WM8994_REG_POWER2, 0x1E0);
-
-	if ((cfg->dai_cfg.i2s.options & I2S_OPT_FRAME_CLK_TARGET) == 0) {
-		wm8994_set_master_clock(dev, &cfg->dai_cfg, cfg->mclk_freq);
-		wm8994_update_reg(dev, wm8994_REG_IFACE0, 1U << 6U, 1U << 6U);
-	}
-
-	wm8994_start_sequence(dev, kwm8994_SequenceDACToHeadphonePowerUp);
-	wm8994_start_sequence(dev, kwm8994_SequenceAnalogueInputPowerUp);
-	wm8994_start_sequence(dev, kwm8994_SequenceSpeakerWake);
-
-	/* enable system clock */
-	wm8994_update_reg(dev, wm8994_REG_CLOCK2, 0x20U, 0x20U);
-
-	/* sysclk clock divider, maximum 12.288MHZ */
-	wm8994_read_reg(dev, wm8994_REG_CLOCK1, &clockDiv);
-	sysClk = cfg->mclk_freq / (1UL << (clockDiv & 3U));
-
-	/* set data protocol */
-	wm8994_protocol_config(dev, cfg->dai_type);
-	/*
-	 * ADC volume, 0dB
-	 */
-	wm8994_write_reg(dev, wm8994_REG_LADC, WM8994_ADC_DEFAULT_VOLUME_VALUE);
-	wm8994_write_reg(dev, wm8994_REG_RADC, WM8994_ADC_DEFAULT_VOLUME_VALUE);
-	/*
-	 * Digital DAC volume, -15.5dB
-	 */
-	wm8994_write_reg(dev, wm8994_REG_LDAC, WM8994_DAC_DEFAULT_VOLUME_VALUE);
-	wm8994_write_reg(dev, wm8994_REG_RDAC, WM8994_DAC_DEFAULT_VOLUME_VALUE);
-	/* speaker volume 6dB */
-	wm8994_write_reg(dev, wm8994_REG_LOUT2, WM8994_SPEAKER_DEFAULT_VOLUME_VALUE);
-	wm8994_write_reg(dev, wm8994_REG_ROUT2, WM8994_SPEAKER_DEFAULT_VOLUME_VALUE);
-	/* input PGA volume */
-	wm8994_write_reg(dev, wm8994_REG_LINVOL, WM8994_LINEIN_DEFAULT_VOLUME_VALUE);
-	wm8994_write_reg(dev, wm8994_REG_RINVOL, WM8994_LINEIN_DEFAULT_VOLUME_VALUE);
-	/* Headphone volume */
-	wm8994_write_reg(dev, wm8994_REG_LOUT1, WM8994_HEADPHONE_DEFAULT_VOLUME_VALUE);
-	wm8994_write_reg(dev, wm8994_REG_ROUT1, WM8994_HEADPHONE_DEFAULT_VOLUME_VALUE);
-	wm8994_audio_fmt_config(dev, &cfg->dai_cfg, sysClk);
-
-	switch (cfg->dai_route) {
-	case AUDIO_ROUTE_BYPASS:
-
-		break;
-	case AUDIO_ROUTE_PLAYBACK:
-		wm8994_configure_output(dev);
-		break;
-
-	case AUDIO_ROUTE_CAPTURE:
-		wm8994_configure_input(dev);
-		break;
-
-	case AUDIO_ROUTE_PLAYBACK_CAPTURE:
-		wm8994_configure_output(dev);
-		wm8994_configure_input(dev);
-		break;
-
-	default:
-		break;
-	}
-
-	return 0;
-}
-
-static void wm8994_start_output(const struct device *dev)
-{
-	/* Not supported */
-}
-
-static void wm8994_stop_output(const struct device *dev)
-{
-	/* Not supported */
-}
-
-static int wm8994_set_property(const struct device *dev, audio_property_t property,
-			       audio_channel_t channel, audio_property_value_t val)
-{
-	switch (property) {
-	case AUDIO_PROPERTY_OUTPUT_VOLUME:
-		return wm8994_out_volume_config(dev, channel, val.vol);
-
-	case AUDIO_PROPERTY_OUTPUT_MUTE:
-		return wm8994_out_mute_config(dev, channel, val.mute);
-
-	case AUDIO_PROPERTY_INPUT_VOLUME:
-		return wm8994_in_volume_config(dev, channel, val.vol);
-
-	case AUDIO_PROPERTY_INPUT_MUTE:
-		return wm8994_in_mute_config(dev, channel, val.mute);
-	default:
-		break;
-	}
-
-	return -EINVAL;
-}
-
-static int wm8994_apply_properties(const struct device *dev)
-{
-	/**
-	 * Set VU = 1 for all input and output channels, VU takes effect for the whole
-	 * channel pair.
-	 */
-	wm8994_update_reg(dev, wm8994_REG_LOUT1, WM8994_REGVAL_OUT_VOL(1, 0, 0),
-			  wm8994_REGMASK_OUT_VU);
-	wm8994_update_reg(dev, wm8994_REG_LINVOL, WM8994_REGVAL_IN_VOL(1, 0, 0, 0),
-			  wm8994_REGMASK_IN_VU);
-
-	return 0;
-}
-
-static void wm8994_write_reg(const struct device *dev, uint16_t reg, uint16_t val)
+void AUDIO_IO_Write(const struct device *dev, uint8_t Addr, uint16_t reg, uint16_t val)
 {
 	const struct wm8994_driver_config *const dev_cfg = DEV_CFG(dev);
 	uint8_t data[4];
@@ -638,10 +51,17 @@ static void wm8994_write_reg(const struct device *dev, uint16_t reg, uint16_t va
 	LOG_DBG("REG:%#02x VAL:%#02x", reg, val);
 }
 
-static void wm8994_read_reg(const struct device *dev, uint16_t reg, uint16_t *val)
+/**
+  * @brief  Reads a single data.
+  * @param  Addr: I2C address
+  * @param  Reg: Reg address
+  * @retval Data to be read
+  */
+uint16_t AUDIO_IO_Read(const struct device *dev, uint8_t Addr, uint16_t reg)
 {
 	const struct wm8994_driver_config *const dev_cfg = DEV_CFG(dev);
 	uint16_t value;
+	uint16_t val;
 	int ret;
 
 	reg = WM8994_SWAP_UINT16_BYTE_SEQUENCE(reg);
@@ -649,64 +69,1100 @@ static void wm8994_read_reg(const struct device *dev, uint16_t reg, uint16_t *va
 	ret = i2c_write_read(dev_cfg->i2c.bus, dev_cfg->i2c.addr, &reg, sizeof(reg), &value,
 			     sizeof(value));
 	if (ret == 0) {
-		*val = (value >> 8) & 0xff;
-		*val += ((value & 0xff) << 8);
+		val = (value >> 8) & 0xff;
+		val += ((value & 0xff) << 8);
 		/* update cache*/
-		LOG_DBG("REG:%#02x VAL:%#02x", WM8994_SWAP_UINT16_BYTE_SEQUENCE(reg), *val);
+		LOG_DBG("REG:%#02x VAL:%#02x", WM8994_SWAP_UINT16_BYTE_SEQUENCE(reg), val);
 	}
+
+	return val;
 }
 
-static void wm8994_update_reg(const struct device *dev, uint16_t reg, uint16_t mask, uint16_t val)
+/**
+  * @brief  AUDIO Codec delay
+  * @param  Delay: Delay in ms
+  */
+void AUDIO_IO_Delay(uint32_t Delay)
 {
-	uint16_t reg_val = 0;
-	uint16_t new_value = 0;
-
-	wm8994_read_reg(dev, reg, &reg_val);
-	LOG_DBG("read %#x = %x", reg, reg_val);
-	new_value = (reg_val & ~mask) | (val & mask);
-	LOG_DBG("write %#x = %x", reg, new_value);
-	wm8994_write_reg(dev, reg, new_value);
+  HAL_Delay(Delay);
 }
 
-static void wm8994_soft_reset(const struct device *dev)
+/**
+  ******************************************************************************
+  * @file    wm8994.c
+  * @author  MCD Application Team
+  * @brief   This file provides the WM8994 Audio Codec driver.
+  ******************************************************************************
+  * @attention
+  *
+  * <h2><center>&copy; COPYRIGHT(c) 2016 STMicroelectronics</center></h2>
+  *
+  * Redistribution and use in source and binary forms, with or without modification,
+  * are permitted provided that the following conditions are met:
+  *   1. Redistributions of source code must retain the above copyright notice,
+  *      this list of conditions and the following disclaimer.
+  *   2. Redistributions in binary form must reproduce the above copyright notice,
+  *      this list of conditions and the following disclaimer in the documentation
+  *      and/or other materials provided with the distribution.
+  *   3. Neither the name of STMicroelectronics nor the names of its contributors
+  *      may be used to endorse or promote products derived from this software
+  *      without specific prior written permission.
+  *
+  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+  * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+  * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+  * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+  * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+  *
+  ******************************************************************************
+  */
+
+/* Includes ------------------------------------------------------------------*/
+
+/** @addtogroup BSP
+  * @{
+  */
+  
+/** @addtogroup Components
+  * @{
+  */ 
+
+/** @addtogroup wm8994
+  * @brief     This file provides a set of functions needed to drive the 
+  *            WM8994 audio codec.
+  * @{
+  */
+
+/** @defgroup WM8994_Private_Types
+  * @{
+  */
+
+/**
+  * @}
+  */ 
+  
+/** @defgroup WM8994_Private_Defines
+  * @{
+  */
+/* Uncomment this line to enable verifying data sent to codec after each write 
+   operation (for debug purpose) */
+#if !defined (VERIFY_WRITTENDATA)  
+/*#define VERIFY_WRITTENDATA*/
+#endif /* VERIFY_WRITTENDATA */
+/**
+  * @}
+  */ 
+
+/** @defgroup WM8994_Private_Macros
+  * @{
+  */
+
+/**
+  * @}
+  */ 
+  
+/** @defgroup WM8994_Private_Variables
+  * @{
+  */
+
+static uint32_t outputEnabled = 0;
+static uint32_t inputEnabled = 0;
+static uint8_t ColdStartup = 1;
+
+/**
+  * @}
+  */ 
+
+/** @defgroup WM8994_Function_Prototypes
+  * @{
+  */
+static uint8_t CODEC_IO_Write(const struct device *dev, uint8_t Addr, uint16_t Reg, uint16_t Value);
+/**
+  * @}
+  */ 
+
+
+/** @defgroup WM8994_Private_Functions
+  * @{
+  */ 
+
+/**
+  * @brief Initializes the audio codec and the control interface.
+  * @param DeviceAddr: Device address on communication Bus.   
+  * @param OutputInputDevice: can be OUTPUT_DEVICE_SPEAKER, OUTPUT_DEVICE_HEADPHONE,
+  *  OUTPUT_DEVICE_BOTH, OUTPUT_DEVICE_AUTO, INPUT_DEVICE_DIGITAL_MICROPHONE_1,
+  *  INPUT_DEVICE_DIGITAL_MICROPHONE_2, INPUT_DEVICE_DIGITAL_MIC1_MIC2, 
+  *  INPUT_DEVICE_INPUT_LINE_1 or INPUT_DEVICE_INPUT_LINE_2.
+  * @param Volume: Initial volume level (from 0 (Mute) to 100 (Max))
+  * @param AudioFreq: Audio Frequency 
+  * @retval 0 if correct communication, else wrong communication
+  */
+uint32_t wm8994_Init(const struct device *dev, uint16_t DeviceAddr, uint16_t OutputInputDevice, uint8_t Volume, uint32_t AudioFreq)
 {
-	wm8994_write_reg(dev, WM8994_REG_RESET, 0x8994U);
+  uint32_t counter = 0;
+  uint16_t output_device = OutputInputDevice & 0xFF;
+  uint16_t input_device = OutputInputDevice & 0xFF00;
+  uint16_t power_mgnt_reg_1 = 0;
+  
+  /* Initialize the Control interface of the Audio Codec */
+  //AUDIO_IO_Init();
+  /* wm8994 Errata Work-Arounds */
+  counter += CODEC_IO_Write(dev, DeviceAddr, 0x102, 0x0003);
+  counter += CODEC_IO_Write(dev, DeviceAddr, 0x817, 0x0000);
+  counter += CODEC_IO_Write(dev, DeviceAddr, 0x102, 0x0000);
+
+  /* Enable VMID soft start (fast), Start-up Bias Current Enabled */
+  counter += CODEC_IO_Write(dev, DeviceAddr, 0x39, 0x006C);
+
+    /* Enable bias generator, Enable VMID */
+  if (input_device > 0)
+  {
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x01, 0x0013);
+  }
+  else
+  {
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x01, 0x0003);
+  }
+
+  /* Add Delay */
+  AUDIO_IO_Delay(50);
+
+  /* Path Configurations for output */
+  if (output_device > 0)
+  {
+    outputEnabled = 1;
+
+    switch (output_device)
+    {
+    case OUTPUT_DEVICE_SPEAKER:
+      /* Enable DAC1 (Left), Enable DAC1 (Right),
+      Disable DAC2 (Left), Disable DAC2 (Right)*/
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x05, 0x0C0C);
+
+      /* Enable the AIF1 Timeslot 0 (Left) to DAC 1 (Left) mixer path */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x601, 0x0000);
+
+      /* Enable the AIF1 Timeslot 0 (Right) to DAC 1 (Right) mixer path */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x602, 0x0000);
+
+      /* Disable the AIF1 Timeslot 1 (Left) to DAC 2 (Left) mixer path */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x604, 0x0002);
+
+      /* Disable the AIF1 Timeslot 1 (Right) to DAC 2 (Right) mixer path */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x605, 0x0002);
+      break;
+
+    case OUTPUT_DEVICE_HEADPHONE:
+      /* Disable DAC1 (Left), Disable DAC1 (Right),
+      Enable DAC2 (Left), Enable DAC2 (Right)*/
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x05, 0x0303);
+
+      /* Enable the AIF1 Timeslot 0 (Left) to DAC 1 (Left) mixer path */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x601, 0x0001);
+
+      /* Enable the AIF1 Timeslot 0 (Right) to DAC 1 (Right) mixer path */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x602, 0x0001);
+
+      /* Disable the AIF1 Timeslot 1 (Left) to DAC 2 (Left) mixer path */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x604, 0x0000);
+
+      /* Disable the AIF1 Timeslot 1 (Right) to DAC 2 (Right) mixer path */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x605, 0x0000);
+      break;
+
+    case OUTPUT_DEVICE_BOTH:
+      if (input_device == INPUT_DEVICE_DIGITAL_MIC1_MIC2)
+      {
+        /* Enable DAC1 (Left), Enable DAC1 (Right),
+        also Enable DAC2 (Left), Enable DAC2 (Right)*/
+        counter += CODEC_IO_Write(dev, DeviceAddr, 0x05, 0x0303 | 0x0C0C);
+        
+        /* Enable the AIF1 Timeslot 0 (Left) to DAC 1 (Left) mixer path
+        Enable the AIF1 Timeslot 1 (Left) to DAC 1 (Left) mixer path */
+        counter += CODEC_IO_Write(dev, DeviceAddr, 0x601, 0x0003);
+        
+        /* Enable the AIF1 Timeslot 0 (Right) to DAC 1 (Right) mixer path
+        Enable the AIF1 Timeslot 1 (Right) to DAC 1 (Right) mixer path */
+        counter += CODEC_IO_Write(dev, DeviceAddr, 0x602, 0x0003);
+        
+        /* Enable the AIF1 Timeslot 0 (Left) to DAC 2 (Left) mixer path
+        Enable the AIF1 Timeslot 1 (Left) to DAC 2 (Left) mixer path  */
+        counter += CODEC_IO_Write(dev, DeviceAddr, 0x604, 0x0003);
+        
+        /* Enable the AIF1 Timeslot 0 (Right) to DAC 2 (Right) mixer path
+        Enable the AIF1 Timeslot 1 (Right) to DAC 2 (Right) mixer path */
+        counter += CODEC_IO_Write(dev, DeviceAddr, 0x605, 0x0003);
+      }
+      else
+      {
+        /* Enable DAC1 (Left), Enable DAC1 (Right),
+        also Enable DAC2 (Left), Enable DAC2 (Right)*/
+        counter += CODEC_IO_Write(dev, DeviceAddr, 0x05, 0x0303 | 0x0C0C);
+        
+        /* Enable the AIF1 Timeslot 0 (Left) to DAC 1 (Left) mixer path */
+        counter += CODEC_IO_Write(dev, DeviceAddr, 0x601, 0x0001);
+        
+        /* Enable the AIF1 Timeslot 0 (Right) to DAC 1 (Right) mixer path */
+        counter += CODEC_IO_Write(dev, DeviceAddr, 0x602, 0x0001);
+        
+        /* Enable the AIF1 Timeslot 1 (Left) to DAC 2 (Left) mixer path */
+        counter += CODEC_IO_Write(dev, DeviceAddr, 0x604, 0x0002);
+        
+        /* Enable the AIF1 Timeslot 1 (Right) to DAC 2 (Right) mixer path */
+        counter += CODEC_IO_Write(dev, DeviceAddr, 0x605, 0x0002);      
+      }
+      break;
+
+    case OUTPUT_DEVICE_AUTO :
+    default:
+      /* Disable DAC1 (Left), Disable DAC1 (Right),
+      Enable DAC2 (Left), Enable DAC2 (Right)*/
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x05, 0x0303);
+
+      /* Enable the AIF1 Timeslot 0 (Left) to DAC 1 (Left) mixer path */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x601, 0x0001);
+
+      /* Enable the AIF1 Timeslot 0 (Right) to DAC 1 (Right) mixer path */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x602, 0x0001);
+
+      /* Disable the AIF1 Timeslot 1 (Left) to DAC 2 (Left) mixer path */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x604, 0x0000);
+
+      /* Disable the AIF1 Timeslot 1 (Right) to DAC 2 (Right) mixer path */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x605, 0x0000);
+      break;
+    }
+  }
+  else
+  {
+    outputEnabled = 0;
+  }
+
+  /* Path Configurations for input */
+  if (input_device > 0)
+  {
+    inputEnabled = 1;
+    switch (input_device)
+    {
+    case INPUT_DEVICE_DIGITAL_MICROPHONE_2 :
+      /* Enable AIF1ADC2 (Left), Enable AIF1ADC2 (Right)
+       * Enable DMICDAT2 (Left), Enable DMICDAT2 (Right)
+       * Enable Left ADC, Enable Right ADC */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x04, 0x0C30);
+
+      /* Enable AIF1 DRC2 Signal Detect & DRC in AIF1ADC2 Left/Right Timeslot 1 */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x450, 0x00DB);
+
+      /* Disable IN1L, IN1R, IN2L, IN2R, Enable Thermal sensor & shutdown */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x02, 0x6000);
+
+      /* Enable the DMIC2(Left) to AIF1 Timeslot 1 (Left) mixer path */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x608, 0x0002);
+
+      /* Enable the DMIC2(Right) to AIF1 Timeslot 1 (Right) mixer path */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x609, 0x0002);
+
+      /* GPIO1 pin configuration GP1_DIR = output, GP1_FN = AIF1 DRC2 signal detect */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x700, 0x000E);
+      break;
+
+    case INPUT_DEVICE_INPUT_LINE_1 :
+      /* IN1LN_TO_IN1L, IN1LP_TO_VMID, IN1RN_TO_IN1R, IN1RP_TO_VMID */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x28, 0x0011);
+
+      /* Disable mute on IN1L_TO_MIXINL and +30dB on IN1L PGA output */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x29, 0x0035);
+
+      /* Disable mute on IN1R_TO_MIXINL, Gain = +30dB */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x2A, 0x0035);
+
+      /* Enable AIF1ADC1 (Left), Enable AIF1ADC1 (Right)
+       * Enable Left ADC, Enable Right ADC */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x04, 0x0303);
+
+      /* Enable AIF1 DRC1 Signal Detect & DRC in AIF1ADC1 Left/Right Timeslot 0 */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x440, 0x00DB);
+
+      /* Enable IN1L and IN1R, Disable IN2L and IN2R, Enable Thermal sensor & shutdown */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x02, 0x6350);
+
+      /* Enable the ADCL(Left) to AIF1 Timeslot 0 (Left) mixer path */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x606, 0x0002);
+
+      /* Enable the ADCR(Right) to AIF1 Timeslot 0 (Right) mixer path */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x607, 0x0002);
+
+      /* GPIO1 pin configuration GP1_DIR = output, GP1_FN = AIF1 DRC1 signal detect */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x700, 0x000D);
+      break;
+
+    case INPUT_DEVICE_DIGITAL_MICROPHONE_1 :
+      /* Enable AIF1ADC1 (Left), Enable AIF1ADC1 (Right)
+       * Enable DMICDAT1 (Left), Enable DMICDAT1 (Right)
+       * Enable Left ADC, Enable Right ADC */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x04, 0x030C);
+
+      /* Enable AIF1 DRC2 Signal Detect & DRC in AIF1ADC1 Left/Right Timeslot 0 */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x440, 0x00DB);
+
+      /* Disable IN1L, IN1R, IN2L, IN2R, Enable Thermal sensor & shutdown */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x02, 0x6350);
+
+      /* Enable the DMIC2(Left) to AIF1 Timeslot 0 (Left) mixer path */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x606, 0x0002);
+
+      /* Enable the DMIC2(Right) to AIF1 Timeslot 0 (Right) mixer path */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x607, 0x0002);
+
+      /* GPIO1 pin configuration GP1_DIR = output, GP1_FN = AIF1 DRC1 signal detect */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x700, 0x000D);
+      break; 
+    case INPUT_DEVICE_DIGITAL_MIC1_MIC2 :
+      /* Enable AIF1ADC1 (Left), Enable AIF1ADC1 (Right)
+       * Enable DMICDAT1 (Left), Enable DMICDAT1 (Right)
+       * Enable Left ADC, Enable Right ADC */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x04, 0x0F3C);
+
+      /* Enable AIF1 DRC2 Signal Detect & DRC in AIF1ADC2 Left/Right Timeslot 1 */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x450, 0x00DB);
+      
+      /* Enable AIF1 DRC2 Signal Detect & DRC in AIF1ADC1 Left/Right Timeslot 0 */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x440, 0x00DB);
+
+      /* Disable IN1L, IN1R, Enable IN2L, IN2R, Thermal sensor & shutdown */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x02, 0x63A0);
+
+      /* Enable the DMIC2(Left) to AIF1 Timeslot 0 (Left) mixer path */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x606, 0x0002);
+
+      /* Enable the DMIC2(Right) to AIF1 Timeslot 0 (Right) mixer path */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x607, 0x0002);
+
+      /* Enable the DMIC2(Left) to AIF1 Timeslot 1 (Left) mixer path */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x608, 0x0002);
+
+      /* Enable the DMIC2(Right) to AIF1 Timeslot 1 (Right) mixer path */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x609, 0x0002);
+      
+      /* GPIO1 pin configuration GP1_DIR = output, GP1_FN = AIF1 DRC1 signal detect */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x700, 0x000D);
+      break;    
+    case INPUT_DEVICE_INPUT_LINE_2 :
+    default:
+      /* Actually, no other input devices supported */
+      counter++;
+      break;
+    }
+  }
+  else
+  {
+    inputEnabled = 0;
+  }
+  
+  /*  Clock Configurations */
+  switch (AudioFreq)
+  {
+  case  AUDIO_FREQUENCY_8K:
+    /* AIF1 Sample Rate = 8 (KHz), ratio=256 */ 
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x210, 0x0003);
+    break;
+    
+  case  AUDIO_FREQUENCY_16K:
+    /* AIF1 Sample Rate = 16 (KHz), ratio=256 */ 
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x210, 0x0033);
+    break;
+
+  case  AUDIO_FREQUENCY_32K:
+    /* AIF1 Sample Rate = 32 (KHz), ratio=256 */ 
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x210, 0x0063);
+    break;
+    
+  case  AUDIO_FREQUENCY_48K:
+    /* AIF1 Sample Rate = 48 (KHz), ratio=256 */ 
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x210, 0x0083);
+    break;
+    
+  case  AUDIO_FREQUENCY_96K:
+    /* AIF1 Sample Rate = 96 (KHz), ratio=256 */ 
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x210, 0x00A3);
+    break;
+    
+  case  AUDIO_FREQUENCY_11K:
+    /* AIF1 Sample Rate = 11.025 (KHz), ratio=256 */ 
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x210, 0x0013);
+    break;
+    
+  case  AUDIO_FREQUENCY_22K:
+    /* AIF1 Sample Rate = 22.050 (KHz), ratio=256 */ 
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x210, 0x0043);
+    break;
+    
+  case  AUDIO_FREQUENCY_44K:
+    /* AIF1 Sample Rate = 44.1 (KHz), ratio=256 */ 
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x210, 0x0073);
+    break; 
+    
+  default:
+    /* AIF1 Sample Rate = 48 (KHz), ratio=256 */ 
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x210, 0x0083);
+    break; 
+  }
+
+  if(input_device == INPUT_DEVICE_DIGITAL_MIC1_MIC2)
+  {
+  /* AIF1 Word Length = 16-bits, AIF1 Format = DSP mode */
+  counter += CODEC_IO_Write(dev, DeviceAddr, 0x300, 0x4018);    
+  }
+  else
+  {
+  /* AIF1 Word Length = 16-bits, AIF1 Format = I2S (Default Register Value) */
+  counter += CODEC_IO_Write(dev, DeviceAddr, 0x300, 0x4010);
+  }
+  
+  /* slave mode */
+  counter += CODEC_IO_Write(dev, DeviceAddr, 0x302, 0x0000);
+  
+  /* Enable the DSP processing clock for AIF1, Enable the core clock */
+  counter += CODEC_IO_Write(dev, DeviceAddr, 0x208, 0x000A);
+  
+  /* Enable AIF1 Clock, AIF1 Clock Source = MCLK1 pin */
+  counter += CODEC_IO_Write(dev, DeviceAddr, 0x200, 0x0001);
+
+  if (output_device > 0)  /* Audio output selected */
+  {
+    if (output_device == OUTPUT_DEVICE_HEADPHONE)
+    {      
+      /* Select DAC1 (Left) to Left Headphone Output PGA (HPOUT1LVOL) path */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x2D, 0x0100);
+      
+      /* Select DAC1 (Right) to Right Headphone Output PGA (HPOUT1RVOL) path */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x2E, 0x0100);    
+            
+      /* Startup sequence for Headphone */
+      if(ColdStartup)
+      {
+        counter += CODEC_IO_Write(dev, DeviceAddr,0x110,0x8100);
+        
+        ColdStartup=0;
+        /* Add Delay */
+        AUDIO_IO_Delay(300);
+      }
+      else /* Headphone Warm Start-Up */
+      { 
+        counter += CODEC_IO_Write(dev, DeviceAddr,0x110,0x8108);
+        /* Add Delay */
+        AUDIO_IO_Delay(50);
+      }
+
+      /* Soft un-Mute the AIF1 Timeslot 0 DAC1 path L&R */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x420, 0x0000);
+    }
+    /* Analog Output Configuration */
+
+    /* Enable SPKRVOL PGA, Enable SPKMIXR, Enable SPKLVOL PGA, Enable SPKMIXL */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x03, 0x0300);
+
+    /* Left Speaker Mixer Volume = 0dB */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x22, 0x0000);
+
+    /* Speaker output mode = Class D, Right Speaker Mixer Volume = 0dB ((0x23, 0x0100) = class AB)*/
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x23, 0x0000);
+
+    /* Unmute DAC2 (Left) to Left Speaker Mixer (SPKMIXL) path,
+    Unmute DAC2 (Right) to Right Speaker Mixer (SPKMIXR) path */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x36, 0x0300);
+
+    /* Enable bias generator, Enable VMID, Enable SPKOUTL, Enable SPKOUTR */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x01, 0x3003);
+
+    /* Headphone/Speaker Enable */
+
+    if (input_device == INPUT_DEVICE_DIGITAL_MIC1_MIC2)
+    {
+    /* Enable Class W, Class W Envelope Tracking = AIF1 Timeslots 0 and 1 */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x51, 0x0205);
+    }
+    else
+    {
+    /* Enable Class W, Class W Envelope Tracking = AIF1 Timeslot 0 */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x51, 0x0005);      
+    }
+
+    /* Enable bias generator, Enable VMID, Enable HPOUT1 (Left) and Enable HPOUT1 (Right) input stages */
+    /* idem for Speaker */
+    power_mgnt_reg_1 |= 0x0303 | 0x3003;
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x01, power_mgnt_reg_1);
+
+    /* Enable HPOUT1 (Left) and HPOUT1 (Right) intermediate stages */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x60, 0x0022);
+
+    /* Enable Charge Pump */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x4C, 0x9F25);
+
+    /* Add Delay */
+    AUDIO_IO_Delay(15);
+
+    /* Select DAC1 (Left) to Left Headphone Output PGA (HPOUT1LVOL) path */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x2D, 0x0001);
+
+    /* Select DAC1 (Right) to Right Headphone Output PGA (HPOUT1RVOL) path */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x2E, 0x0001);
+
+    /* Enable Left Output Mixer (MIXOUTL), Enable Right Output Mixer (MIXOUTR) */
+    /* idem for SPKOUTL and SPKOUTR */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x03, 0x0030 | 0x0300);
+
+    /* Enable DC Servo and trigger start-up mode on left and right channels */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x54, 0x0033);
+
+    /* Add Delay */
+    AUDIO_IO_Delay(257);
+
+    /* Enable HPOUT1 (Left) and HPOUT1 (Right) intermediate and output stages. Remove clamps */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x60, 0x00EE);
+
+    /* Unmutes */
+
+    /* Unmute DAC 1 (Left) */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x610, 0x00C0);
+
+    /* Unmute DAC 1 (Right) */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x611, 0x00C0);
+
+    /* Unmute the AIF1 Timeslot 0 DAC path */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x420, 0x0010);
+
+    /* Unmute DAC 2 (Left) */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x612, 0x00C0);
+
+    /* Unmute DAC 2 (Right) */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x613, 0x00C0);
+
+    /* Unmute the AIF1 Timeslot 1 DAC2 path */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x422, 0x0010);
+    
+    /* Volume Control */
+    wm8994_SetVolume(dev, DeviceAddr, Volume);
+  }
+
+  if (input_device > 0) /* Audio input selected */
+  {
+    if ((input_device == INPUT_DEVICE_DIGITAL_MICROPHONE_1) || (input_device == INPUT_DEVICE_DIGITAL_MICROPHONE_2))
+    {
+      /* Enable Microphone bias 1 generator, Enable VMID */
+      power_mgnt_reg_1 |= 0x0013;
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x01, power_mgnt_reg_1);
+
+      /* ADC oversample enable */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x620, 0x0002);
+
+      /* AIF ADC2 HPF enable, HPF cut = voice mode 1 fc=127Hz at fs=8kHz */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x411, 0x3800);
+    }
+    else if(input_device == INPUT_DEVICE_DIGITAL_MIC1_MIC2)
+    {
+      /* Enable Microphone bias 1 generator, Enable VMID */
+      power_mgnt_reg_1 |= 0x0013;
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x01, power_mgnt_reg_1);
+
+      /* ADC oversample enable */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x620, 0x0002);
+    
+      /* AIF ADC1 HPF enable, HPF cut = voice mode 1 fc=127Hz at fs=8kHz */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x410, 0x1800);
+      
+      /* AIF ADC2 HPF enable, HPF cut = voice mode 1 fc=127Hz at fs=8kHz */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x411, 0x1800);      
+    }    
+    else if ((input_device == INPUT_DEVICE_INPUT_LINE_1) || (input_device == INPUT_DEVICE_INPUT_LINE_2))
+    {
+
+      /* Disable mute on IN1L, IN1L Volume = +0dB */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x18, 0x000B);
+
+      /* Disable mute on IN1R, IN1R Volume = +0dB */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x1A, 0x000B);
+
+      /* AIF ADC1 HPF enable, HPF cut = hifi mode fc=4Hz at fs=48kHz */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x410, 0x1800);
+    }
+    /* Volume Control */
+    wm8994_SetVolume(dev, DeviceAddr, Volume);
+  }
+  /* Return communication control value */
+  return counter;  
 }
 
-static void wm8994_configure_output(const struct device *dev)
+/**
+  * @brief  Deinitializes the audio codec.
+  * @param  None
+  * @retval  None
+  */
+void wm8994_DeInit(void)
 {
-	wm8994_out_volume_config(dev, AUDIO_CHANNEL_ALL, WM8994_HEADPHONE_DEFAULT_VOLUME_VALUE);
-	wm8994_out_mute_config(dev, AUDIO_CHANNEL_ALL, false);
-
-	wm8994_apply_properties(dev);
+  /* Deinitialize Audio Codec interface */
+  //AUDIO_IO_DeInit();
 }
 
-static void wm8994_configure_input(const struct device *dev)
+/**
+  * @brief  Get the WM8994 ID.
+  * @param DeviceAddr: Device address on communication Bus.
+  * @retval The WM8994 ID 
+  */
+uint32_t wm8994_ReadID(const struct device *dev, uint16_t DeviceAddr)
 {
-	wm8994_route_input(dev, AUDIO_CHANNEL_FRONT_LEFT, kwm8994_InputPGASourceInput1);
-	wm8994_route_input(dev, AUDIO_CHANNEL_FRONT_RIGHT, kwm8994_InputPGASourceInput3);
+  /* Initialize the Control interface of the Audio Codec */
+  //AUDIO_IO_Init();
 
-	/* Input MIXER source */
-	wm8994_write_reg(dev, wm8994_REG_INPUTMIX,
-			 (((kwm8994_InputMixerSourceInputPGA & 7U) << 3U) |
-			  (kwm8994_InputMixerSourceInputPGA & 7U)));
-	/* Input MIXER enable */
-	wm8994_write_reg(dev, wm8994_REG_INPUT_MIXER_1, 3U);
-
-	wm8994_in_volume_config(dev, AUDIO_CHANNEL_ALL, wm8994_LINEIN_DEFAULT_VOLUME_VALUE);
-	wm8994_in_mute_config(dev, AUDIO_CHANNEL_ALL, false);
+  return ((uint32_t)AUDIO_IO_Read(dev, DeviceAddr, WM8994_CHIPID_ADDR));
 }
 
-#if DEBUG_wm8994_REGISTER
-static void wm8994_read_all_reg(const struct device *dev, uint16_t endAddress)
+/**
+  * @brief Start the audio Codec play feature.
+  * @note For this codec no Play options are required.
+  * @param DeviceAddr: Device address on communication Bus.   
+  * @retval 0 if correct communication, else wrong communication
+  */
+uint32_t wm8994_Play(const struct device *dev, uint16_t DeviceAddr)
 {
-	uint16_t readValue = 0U, i = 0U;
+  uint32_t counter = 0;
+ 
+  /* Resumes the audio file playing */  
+  /* Unmute the output first */
+  counter += wm8994_SetMute(dev, DeviceAddr, AUDIO_MUTE_OFF);
+  
+  return counter;
+}
 
-	for (i = 0U; i < endAddress; i++) {
-		wm8994_read_reg(dev, i, &readValue);
+/**
+  * @brief Pauses playing on the audio codec.
+  * @param DeviceAddr: Device address on communication Bus. 
+  * @retval 0 if correct communication, else wrong communication
+  */
+uint32_t wm8994_Pause(const struct device *dev, uint16_t DeviceAddr)
+{  
+  uint32_t counter = 0;
+ 
+  /* Pause the audio file playing */
+  /* Mute the output first */
+  counter += wm8994_SetMute(dev, DeviceAddr, AUDIO_MUTE_ON);
+  
+  /* Put the Codec in Power save mode */
+  counter += CODEC_IO_Write(dev, DeviceAddr, 0x02, 0x01);
+ 
+  return counter;
+}
+
+/**
+  * @brief Resumes playing on the audio codec.
+  * @param DeviceAddr: Device address on communication Bus. 
+  * @retval 0 if correct communication, else wrong communication
+  */
+uint32_t wm8994_Resume(const struct device *dev, uint16_t DeviceAddr)
+{
+  uint32_t counter = 0;
+ 
+  /* Resumes the audio file playing */  
+  /* Unmute the output first */
+  counter += wm8994_SetMute(dev, DeviceAddr, AUDIO_MUTE_OFF);
+  
+  return counter;
+}
+
+/**
+  * @brief Stops audio Codec playing. It powers down the codec.
+  * @param DeviceAddr: Device address on communication Bus. 
+  * @param CodecPdwnMode: selects the  power down mode.
+  *          - CODEC_PDWN_SW: only mutes the audio codec. When resuming from this 
+  *                           mode the codec keeps the previous initialization
+  *                           (no need to re-Initialize the codec registers).
+  *          - CODEC_PDWN_HW: Physically power down the codec. When resuming from this
+  *                           mode, the codec is set to default configuration 
+  *                           (user should re-Initialize the codec in order to 
+  *                            play again the audio stream).
+  * @retval 0 if correct communication, else wrong communication
+  */
+uint32_t wm8994_Stop(const struct device *dev, uint16_t DeviceAddr, uint32_t CodecPdwnMode)
+{
+  uint32_t counter = 0;
+
+  if (outputEnabled != 0)
+  {
+    /* Mute the output first */
+    counter += wm8994_SetMute(dev, DeviceAddr, AUDIO_MUTE_ON);
+
+    if (CodecPdwnMode == CODEC_PDWN_SW)
+    {
+      /* Only output mute required*/
+    }
+    else /* CODEC_PDWN_HW */
+    {
+      /* Mute the AIF1 Timeslot 0 DAC1 path */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x420, 0x0200);
+
+      /* Mute the AIF1 Timeslot 1 DAC2 path */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x422, 0x0200);
+
+      /* Disable DAC1L_TO_HPOUT1L */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x2D, 0x0000);
+
+      /* Disable DAC1R_TO_HPOUT1R */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x2E, 0x0000);
+
+      /* Disable DAC1 and DAC2 */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x05, 0x0000);
+
+      /* Reset Codec by writing in 0x0000 address register */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x0000, 0x0000);
+
+      outputEnabled = 0;
+    }
+  }
+  return counter;
+}
+
+/**
+  * @brief Sets higher or lower the codec volume level.
+  * @param DeviceAddr: Device address on communication Bus.
+  * @param Volume: a byte value from 0 to 255 (refer to codec registers 
+  *         description for more details).
+  * @retval 0 if correct communication, else wrong communication
+  */
+uint32_t wm8994_SetVolume(const struct device *dev, uint16_t DeviceAddr, uint8_t Volume)
+{
+  uint32_t counter = 0;
+  uint8_t convertedvol = VOLUME_CONVERT(Volume);
+
+  /* Output volume */
+  if (outputEnabled != 0)
+  {
+    if(convertedvol > 0x3E)
+    {
+      /* Unmute audio codec */
+      counter += wm8994_SetMute(dev, DeviceAddr, AUDIO_MUTE_OFF);
+
+      /* Left Headphone Volume */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x1C, 0x3F | 0x140);
+
+      /* Right Headphone Volume */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x1D, 0x3F | 0x140);
+
+      /* Left Speaker Volume */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x26, 0x3F | 0x140);
+
+      /* Right Speaker Volume */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x27, 0x3F | 0x140);
+    }
+    else if (Volume == 0)
+    {
+      /* Mute audio codec */
+      counter += wm8994_SetMute(dev, DeviceAddr, AUDIO_MUTE_ON);
+    }
+    else
+    {
+      /* Unmute audio codec */
+      counter += wm8994_SetMute(dev, DeviceAddr, AUDIO_MUTE_OFF);
+
+      /* Left Headphone Volume */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x1C, convertedvol | 0x140);
+
+      /* Right Headphone Volume */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x1D, convertedvol | 0x140);
+
+      /* Left Speaker Volume */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x26, convertedvol | 0x140);
+
+      /* Right Speaker Volume */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x27, convertedvol | 0x140);
+    }
+  }
+
+  /* Input volume */
+  if (inputEnabled != 0)
+  {
+    convertedvol = VOLUME_IN_CONVERT(Volume);
+
+    /* Left AIF1 ADC1 volume */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x400, convertedvol | 0x100);
+
+    /* Right AIF1 ADC1 volume */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x401, convertedvol | 0x100);
+
+    /* Left AIF1 ADC2 volume */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x404, convertedvol | 0x100);
+
+    /* Right AIF1 ADC2 volume */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x405, convertedvol | 0x100);
+  }
+  return counter;
+}
+
+/**
+  * @brief Enables or disables the mute feature on the audio codec.
+  * @param DeviceAddr: Device address on communication Bus.   
+  * @param Cmd: AUDIO_MUTE_ON to enable the mute or AUDIO_MUTE_OFF to disable the
+  *             mute mode.
+  * @retval 0 if correct communication, else wrong communication
+  */
+uint32_t wm8994_SetMute(const struct device *dev, uint16_t DeviceAddr, uint32_t Cmd)
+{
+  uint32_t counter = 0;
+  
+  if (outputEnabled != 0)
+  {
+    /* Set the Mute mode */
+    if(Cmd == AUDIO_MUTE_ON)
+    {
+      /* Soft Mute the AIF1 Timeslot 0 DAC1 path L&R */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x420, 0x0200);
+
+      /* Soft Mute the AIF1 Timeslot 1 DAC2 path L&R */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x422, 0x0200);
+    }
+    else /* AUDIO_MUTE_OFF Disable the Mute */
+    {
+      /* Unmute the AIF1 Timeslot 0 DAC1 path L&R */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x420, 0x0010);
+
+      /* Unmute the AIF1 Timeslot 1 DAC2 path L&R */
+      counter += CODEC_IO_Write(dev, DeviceAddr, 0x422, 0x0010);
+    }
+  }
+  return counter;
+}
+
+/**
+  * @brief Switch dynamically (while audio file is played) the output target 
+  *         (speaker or headphone).
+  * @param DeviceAddr: Device address on communication Bus.
+  * @param Output: specifies the audio output target: OUTPUT_DEVICE_SPEAKER,
+  *         OUTPUT_DEVICE_HEADPHONE, OUTPUT_DEVICE_BOTH or OUTPUT_DEVICE_AUTO 
+  * @retval 0 if correct communication, else wrong communication
+  */
+uint32_t wm8994_SetOutputMode(const struct device *dev, uint16_t DeviceAddr, uint8_t Output)
+{
+  uint32_t counter = 0; 
+  
+  switch (Output) 
+  {
+  case OUTPUT_DEVICE_SPEAKER:
+    /* Enable DAC1 (Left), Enable DAC1 (Right), 
+    Disable DAC2 (Left), Disable DAC2 (Right)*/
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x05, 0x0C0C);
+    
+    /* Enable the AIF1 Timeslot 0 (Left) to DAC 1 (Left) mixer path */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x601, 0x0000);
+    
+    /* Enable the AIF1 Timeslot 0 (Right) to DAC 1 (Right) mixer path */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x602, 0x0000);
+    
+    /* Disable the AIF1 Timeslot 1 (Left) to DAC 2 (Left) mixer path */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x604, 0x0002);
+    
+    /* Disable the AIF1 Timeslot 1 (Right) to DAC 2 (Right) mixer path */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x605, 0x0002);
+    break;
+    
+  case OUTPUT_DEVICE_HEADPHONE:
+    /* Disable DAC1 (Left), Disable DAC1 (Right), 
+    Enable DAC2 (Left), Enable DAC2 (Right)*/
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x05, 0x0303);
+    
+    /* Enable the AIF1 Timeslot 0 (Left) to DAC 1 (Left) mixer path */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x601, 0x0001);
+    
+    /* Enable the AIF1 Timeslot 0 (Right) to DAC 1 (Right) mixer path */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x602, 0x0001);
+    
+    /* Disable the AIF1 Timeslot 1 (Left) to DAC 2 (Left) mixer path */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x604, 0x0000);
+    
+    /* Disable the AIF1 Timeslot 1 (Right) to DAC 2 (Right) mixer path */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x605, 0x0000);
+    break;
+    
+  case OUTPUT_DEVICE_BOTH:
+    /* Enable DAC1 (Left), Enable DAC1 (Right), 
+    also Enable DAC2 (Left), Enable DAC2 (Right)*/
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x05, 0x0303 | 0x0C0C);
+    
+    /* Enable the AIF1 Timeslot 0 (Left) to DAC 1 (Left) mixer path */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x601, 0x0001);
+    
+    /* Enable the AIF1 Timeslot 0 (Right) to DAC 1 (Right) mixer path */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x602, 0x0001);
+    
+    /* Enable the AIF1 Timeslot 1 (Left) to DAC 2 (Left) mixer path */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x604, 0x0002);
+    
+    /* Enable the AIF1 Timeslot 1 (Right) to DAC 2 (Right) mixer path */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x605, 0x0002);
+    break;
+    
+  default:
+    /* Disable DAC1 (Left), Disable DAC1 (Right), 
+    Enable DAC2 (Left), Enable DAC2 (Right)*/
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x05, 0x0303);
+    
+    /* Enable the AIF1 Timeslot 0 (Left) to DAC 1 (Left) mixer path */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x601, 0x0001);
+    
+    /* Enable the AIF1 Timeslot 0 (Right) to DAC 1 (Right) mixer path */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x602, 0x0001);
+    
+    /* Disable the AIF1 Timeslot 1 (Left) to DAC 2 (Left) mixer path */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x604, 0x0000);
+    
+    /* Disable the AIF1 Timeslot 1 (Right) to DAC 2 (Right) mixer path */
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x605, 0x0000);
+    break;    
+  }  
+  return counter;
+}
+
+/**
+  * @brief Sets new frequency.
+  * @param DeviceAddr: Device address on communication Bus.
+  * @param AudioFreq: Audio frequency used to play the audio stream.
+  * @retval 0 if correct communication, else wrong communication
+  */
+uint32_t wm8994_SetFrequency(const struct device *dev, uint16_t DeviceAddr, uint32_t AudioFreq)
+{
+  uint32_t counter = 0;
+ 
+  /*  Clock Configurations */
+  switch (AudioFreq)
+  {
+  case  AUDIO_FREQUENCY_8K:
+    /* AIF1 Sample Rate = 8 (KHz), ratio=256 */ 
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x210, 0x0003);
+    break;
+    
+  case  AUDIO_FREQUENCY_16K:
+    /* AIF1 Sample Rate = 16 (KHz), ratio=256 */ 
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x210, 0x0033);
+    break;
+
+  case  AUDIO_FREQUENCY_32K:
+    /* AIF1 Sample Rate = 32 (KHz), ratio=256 */ 
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x210, 0x0063);
+    break;
+    
+  case  AUDIO_FREQUENCY_48K:
+    /* AIF1 Sample Rate = 48 (KHz), ratio=256 */ 
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x210, 0x0083);
+    break;
+    
+  case  AUDIO_FREQUENCY_96K:
+    /* AIF1 Sample Rate = 96 (KHz), ratio=256 */ 
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x210, 0x00A3);
+    break;
+    
+  case  AUDIO_FREQUENCY_11K:
+    /* AIF1 Sample Rate = 11.025 (KHz), ratio=256 */ 
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x210, 0x0013);
+    break;
+    
+  case  AUDIO_FREQUENCY_22K:
+    /* AIF1 Sample Rate = 22.050 (KHz), ratio=256 */ 
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x210, 0x0043);
+    break;
+    
+  case  AUDIO_FREQUENCY_44K:
+    /* AIF1 Sample Rate = 44.1 (KHz), ratio=256 */ 
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x210, 0x0073);
+    break; 
+    
+  default:
+    /* AIF1 Sample Rate = 48 (KHz), ratio=256 */ 
+    counter += CODEC_IO_Write(dev, DeviceAddr, 0x210, 0x0083);
+    break; 
+  }
+  return counter;
+}
+
+/**
+  * @brief Resets wm8994 registers.
+  * @param DeviceAddr: Device address on communication Bus. 
+  * @retval 0 if correct communication, else wrong communication
+  */
+uint32_t wm8994_Reset(const struct device *dev, uint16_t DeviceAddr)
+{
+  uint32_t counter = 0;
+  
+  /* Reset Codec by writing in 0x0000 address register */
+  counter = CODEC_IO_Write(dev, DeviceAddr, 0x0000, 0x0000);
+  outputEnabled = 0;
+  inputEnabled=0;
+
+  return counter;
+}
+
+/**
+  * @brief  Writes/Read a single data.
+  * @param  Addr: I2C address
+  * @param  Reg: Reg address 
+  * @param  Value: Data to be written
+  * @retval None
+  */
+static uint8_t CODEC_IO_Write(const struct device *dev, uint8_t Addr, uint16_t Reg, uint16_t Value)
+{
+  uint32_t result = 0;
+  
+ AUDIO_IO_Write(dev, Addr, Reg, Value);
+  
+#ifdef VERIFY_WRITTENDATA
+  /* Verify that the data has been correctly written */
+  result = (AUDIO_IO_Read(dev, Addr, Reg) == Value)? 0:1;
+#endif /* VERIFY_WRITTENDATA */
+  
+  return result;
+}
+
+/************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/
+
+#define AUDIO_I2C_ADDRESS	0x34
+static int wm8994_configure(const struct device *dev, struct audio_codec_cfg *cfg)
+{
+	wm8994_Reset(dev, AUDIO_I2C_ADDRESS);
+	if (wm8994_Init(dev, AUDIO_I2C_ADDRESS, OUTPUT_DEVICE_HEADPHONE, 70, BSP_AUDIO_FREQUENCY_44K) !=0)
+		return -ENOTSUP;
+
+	  /* Call the audio Codec Play function */
+	if(wm8994_Play(dev, AUDIO_I2C_ADDRESS) != 0)
+	{
+		return -ENOTSUP;
 	}
+
+	return 0;
 }
-#endif
+
+static void wm8994_start_output(const struct device *dev) {};
+static void wm8994_stop_output(const struct device *dev) {};
+static int wm8994_set_property(const struct device *dev, audio_property_t property,
+			       audio_channel_t channel, audio_property_value_t val)
+{
+	return 0;
+}
+static int wm8994_apply_properties(const struct device *dev)
+{
+	return 0;
+}
+static int wm8994_route_input(const struct device *dev,
+			      audio_channel_t channel, uint32_t input)
+{
+	return 0;
+}
+static int wm8994_route_output(const struct device *dev,
+			       audio_channel_t channel, uint32_t output)
+{
+	return 0;
+}
 
 static const struct audio_codec_api wm8994_driver_api = {
 	.configure = wm8994_configure,
@@ -718,14 +1174,12 @@ static const struct audio_codec_api wm8994_driver_api = {
 	.route_output = wm8994_route_output
 };
 
-#define wm8994_INIT(n)                                                                             \
+#define WM8994_INIT(n)                                                                             \
 	static const struct wm8994_driver_config wm8994_device_config_##n = {                      \
 		.i2c = I2C_DT_SPEC_INST_GET(n),                                                    \
-		.clock_source = DT_INST_ENUM_IDX(n, clock_source),                                 \
-		.mclk_dev = DEVICE_DT_GET(DT_INST_CLOCKS_CTLR_BY_NAME(n, mclk)),                   \
-		.mclk_name = (clock_control_subsys_t)DT_INST_CLOCKS_CELL_BY_NAME(n, mclk, name)};  \
+	};  \
                                                                                                    \
 	DEVICE_DT_INST_DEFINE(n, NULL, NULL, NULL, &wm8994_device_config_##n, POST_KERNEL,         \
 			      CONFIG_AUDIO_CODEC_INIT_PRIORITY, &wm8994_driver_api);
 
-DT_INST_FOREACH_STATUS_OKAY(wm8994_INIT)
+DT_INST_FOREACH_STATUS_OKAY(WM8994_INIT)

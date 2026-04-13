@@ -128,7 +128,7 @@ extern "C" {
 #define WM8994_REG_PULL_CONTROL_1 0x0720	/* R1824  - Pull Control (1) */
 #define WM8994_REG_PULL_CONTROL_2 0x0721	/* R1825  - Pull Control (2) */
 #define WM8994_REG_INT_STATUS_1 0x0738	/* R1848  - Interrupt Status 1 Mask */
-#define WM8994_REG_INT_STATUS_1 0x0739	/* R1849  - Interrupt Status 2 Mask */
+#define WM8994_REG_INT_STATUS_2 0x0739	/* R1849  - Interrupt Status 2 Mask */
 #define WM8994_REG_INT_CONTROL 0x0740	/* R1856  - Interrupt Control */
 #define WM8994_REG_INT_DEBOUNCE 0x0748	/* R1864  - IRQ Debounce */
 
@@ -414,6 +414,115 @@ typedef enum _wm8994_sequence_id {
 	kwm8994_SequenceSpeakerSleep = 0xE4U,          /*!< Speaker sleep sequence */
 	kwm8994_SequenceSpeakerWake = 0xE8U,           /*!< speaker wake sequence */
 } wm8994_sequence_id_t;
+
+/******************************************************************************/
+/***************************  Codec User defines ******************************/
+/******************************************************************************/
+/* Codec output DEVICE */
+#define OUTPUT_DEVICE_SPEAKER                 ((uint16_t)0x0001)
+#define OUTPUT_DEVICE_HEADPHONE               ((uint16_t)0x0002)
+#define OUTPUT_DEVICE_BOTH                    ((uint16_t)0x0003)
+#define OUTPUT_DEVICE_AUTO                    ((uint16_t)0x0004)
+#define INPUT_DEVICE_DIGITAL_MICROPHONE_1     ((uint16_t)0x0100)
+#define INPUT_DEVICE_DIGITAL_MICROPHONE_2     ((uint16_t)0x0200)
+#define INPUT_DEVICE_INPUT_LINE_1             ((uint16_t)0x0300)
+#define INPUT_DEVICE_INPUT_LINE_2             ((uint16_t)0x0400)
+#define INPUT_DEVICE_DIGITAL_MIC1_MIC2        ((uint16_t)0x0800)
+
+/* Volume Levels values */
+#define DEFAULT_VOLMIN                0x00
+#define DEFAULT_VOLMAX                0xFF
+#define DEFAULT_VOLSTEP               0x04
+
+#define AUDIO_PAUSE                   0
+#define AUDIO_RESUME                  1
+
+/* Codec POWER DOWN modes */
+#define CODEC_PDWN_HW                 1
+#define CODEC_PDWN_SW                 2
+
+/* MUTE commands */
+#define AUDIO_MUTE_ON                 1
+#define AUDIO_MUTE_OFF                0
+
+/* AUDIO FREQUENCY */
+#define AUDIO_FREQUENCY_192K          ((uint32_t)192000)
+#define AUDIO_FREQUENCY_96K           ((uint32_t)96000)
+#define AUDIO_FREQUENCY_48K           ((uint32_t)48000)
+#define AUDIO_FREQUENCY_44K           ((uint32_t)44100)
+#define AUDIO_FREQUENCY_32K           ((uint32_t)32000)
+#define AUDIO_FREQUENCY_22K           ((uint32_t)22050)
+#define AUDIO_FREQUENCY_16K           ((uint32_t)16000)
+#define AUDIO_FREQUENCY_11K           ((uint32_t)11025)
+#define AUDIO_FREQUENCY_8K            ((uint32_t)8000)
+
+#define BSP_AUDIO_FREQUENCY_96K         SAI_AUDIO_FREQUENCY_96K
+#define BSP_AUDIO_FREQUENCY_48K         SAI_AUDIO_FREQUENCY_48K
+#define BSP_AUDIO_FREQUENCY_44K         SAI_AUDIO_FREQUENCY_44K
+#define BSP_AUDIO_FREQUENCY_32K         SAI_AUDIO_FREQUENCY_32K
+#define BSP_AUDIO_FREQUENCY_22K         SAI_AUDIO_FREQUENCY_22K
+#define BSP_AUDIO_FREQUENCY_16K         SAI_AUDIO_FREQUENCY_16K
+#define BSP_AUDIO_FREQUENCY_11K         SAI_AUDIO_FREQUENCY_11K
+#define BSP_AUDIO_FREQUENCY_8K          SAI_AUDIO_FREQUENCY_8K
+
+/* Audio status definition */
+#define AUDIO_OK                            ((uint8_t)0)
+#define AUDIO_ERROR                         ((uint8_t)1)
+#define AUDIO_TIMEOUT                       ((uint8_t)2)
+
+#define VOLUME_CONVERT(Volume)        (((Volume) > 100)? 100:((uint8_t)(((Volume) * 63) / 100)))
+#define VOLUME_IN_CONVERT(Volume)     (((Volume) >= 100)? 239:((uint8_t)(((Volume) * 240) / 100)))
+
+/******************************************************************************/
+/****************************** REGISTER MAPPING ******************************/
+/******************************************************************************/
+/**
+  * @brief  WM8994 ID
+  */
+#define  WM8994_ID    0x8994
+
+/**
+  * @brief Device ID Register: Reading from this register will indicate device
+  *                            family ID 8994h
+  */
+#define WM8994_CHIPID_ADDR                  0x00
+
+/**
+  * @}
+  */
+
+/** @defgroup WM8994_Exported_Macros
+  * @{
+  */
+/**
+  * @}
+  */
+
+/** @defgroup WM8994_Exported_Functions
+  * @{
+  */
+
+/*------------------------------------------------------------------------------
+                           Audio Codec functions
+------------------------------------------------------------------------------*/
+/* High Layer codec functions */
+uint32_t wm8994_Init(const struct device *dev, uint16_t DeviceAddr, uint16_t OutputInputDevice, uint8_t Volume, uint32_t AudioFreq);
+void     wm8994_DeInit(void);
+uint32_t wm8994_ReadID(const struct device *dev, uint16_t DeviceAddr);
+uint32_t wm8994_Play(const struct device *dev, uint16_t DeviceAddr);
+uint32_t wm8994_Pause(const struct device *dev, uint16_t DeviceAddr);
+uint32_t wm8994_Resume(const struct device *dev, uint16_t DeviceAddr);
+uint32_t wm8994_Stop(const struct device *dev, uint16_t DeviceAddr, uint32_t Cmd);
+uint32_t wm8994_SetVolume(const struct device *dev, uint16_t DeviceAddr, uint8_t Volume);
+uint32_t wm8994_SetMute(const struct device *dev, uint16_t DeviceAddr, uint32_t Cmd);
+uint32_t wm8994_SetOutputMode(const struct device *dev, uint16_t DeviceAddr, uint8_t Output);
+uint32_t wm8994_SetFrequency(const struct device *dev, uint16_t DeviceAddr, uint32_t AudioFreq);
+uint32_t wm8994_Reset(const struct device *dev, uint16_t DeviceAddr);
+
+/* AUDIO IO functions */
+void    AUDIO_IO_Write(const struct device *dev, uint8_t Addr, uint16_t Reg, uint16_t Value);
+uint16_t AUDIO_IO_Read(const struct device *dev, uint8_t Addr, uint16_t Reg);
+void    AUDIO_IO_Delay(uint32_t Delay);
 
 #ifdef __cplusplus
 }
