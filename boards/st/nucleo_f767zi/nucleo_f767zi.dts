@@ -91,6 +91,15 @@
 	status = "okay";
 };
 
+&pllsai {
+	div-m = <4>;
+	mul-n = <216>;
+	div-q = <2>;
+	post-div-q = <19>;
+	clocks = <&clk_hse>;
+	status = "okay";
+};
+
 &rcc {
 	clocks = <&pll>;
 	clock-frequency = <DT_FREQ_M(216)>;
@@ -213,6 +222,22 @@ zephyr_udc0: &usbotg_fs {
 	eth_phy: ethernet-phy@0 {
 		compatible = "ethernet-phy";
 		reg = <0x00>;
+	};
+};
+
+&dfsdm {
+	status = "okay";
+};
+
+&pdm0 {
+	pinctrl-0 = <&dfsdm1_ckout_pb0
+		     &dfsdm1_datin1_pb1>;
+	pinctrl-names = "default";
+	status = "okay";
+
+	channel@1 {
+		reg = <1>;
+		label = "dmic1";
 	};
 };
 

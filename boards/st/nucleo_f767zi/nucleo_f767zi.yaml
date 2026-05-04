@@ -25,4 +25,5 @@ supported:
   - can
   - dac
   - rtc
+  - dmic
 vendor: st
