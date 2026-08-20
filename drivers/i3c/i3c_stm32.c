@@ -2467,13 +2467,18 @@ static DEVICE_API(i3c, i3c_stm32_driver_api) = {
 };
 
 #ifdef CONFIG_I3C_STM32_DMA
+#define I3C_STM32_DMA_DIRECTION_MEMORY_PERIPHERAL MEMORY_TO_PERIPHERAL
+#define I3C_STM32_DMA_DIRECTION_PERIPHERAL_MEMORY PERIPHERAL_TO_MEMORY
+
+#define I3C_STM32_DMA_ADDR_INC_MEMORY 1U
+#define I3C_STM32_DMA_ADDR_INC_PERIPHERAL 0U
+
 #define STM32_I3C_DMA_CHANNEL_INIT(index, dir, src_dev, dest_dev)                                  \
 	.dma_dev = DEVICE_DT_GET(STM32_DMA_CTLR(index, dir)),                                      \
 	.dma_channel = DT_INST_DMAS_CELL_BY_NAME(index, dir, channel),                             \
 	.dma_cfg = {                                                                               \
 		.dma_slot = STM32_DMA_SLOT(index, dir, slot),                                      \
-		.channel_direction =                                                               \
-				STM32_DMA_CONFIG_DIRECTION(STM32_DMA_CHANNEL_CONFIG(index, dir)),  \
+		.channel_direction = I3C_STM32_DMA_DIRECTION_##src_dev##_##dest_dev,              \
 		.channel_priority =                                                                \
 				STM32_DMA_CONFIG_PRIORITY(STM32_DMA_CHANNEL_CONFIG(index, dir)),   \
 		.source_data_size = STM32_DMA_CONFIG_##src_dev##_DATA_SIZE(                        \
@@ -2488,10 +2493,8 @@ static DEVICE_API(i3c, i3c_stm32_driver_api) = {
 		.block_count = 1,                                                                  \
 		.dma_callback = i3c_stm32_dma_##dir##_cb,                                          \
 	},                                                                                         \
-	.src_addr_increment =                                                                      \
-		STM32_DMA_CONFIG_##src_dev##_ADDR_INC(STM32_DMA_CHANNEL_CONFIG(index, dir)),       \
-	.dst_addr_increment =                                                                      \
-		STM32_DMA_CONFIG_##dest_dev##_ADDR_INC(STM32_DMA_CHANNEL_CONFIG(index, dir)),      \
+	.src_addr_increment = I3C_STM32_DMA_ADDR_INC_##src_dev,                                  \
+	.dst_addr_increment = I3C_STM32_DMA_ADDR_INC_##dest_dev,                                 \
 	.fifo_threshold = STM32_DMA_FEATURES_FIFO_THRESHOLD(STM32_DMA_FEATURES(index, dir)),
 #endif
 

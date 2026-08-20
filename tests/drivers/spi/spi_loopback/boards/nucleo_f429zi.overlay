@@ -5,8 +5,8 @@
  */
 
 &spi1 {
-	dmas = <&dma2 5 3 STM32_DMA_PERIPH_TX STM32_DMA_FIFO_FULL>,
-	       <&dma2 2 3 STM32_DMA_PERIPH_RX STM32_DMA_FIFO_FULL>;
+	dmas = <&dma2 5 3 STM32_DMA_PRIORITY_LOW STM32_DMA_FIFO_FULL>,
+	       <&dma2 2 3 STM32_DMA_PRIORITY_LOW STM32_DMA_FIFO_FULL>;
 	dma-names = "tx", "rx";
 };
 

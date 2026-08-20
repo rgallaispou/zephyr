@@ -2213,13 +2213,19 @@ static int spi_stm32_init(const struct device *dev)
 #define STM32_SPI_IRQ_HANDLER(id)
 #endif /* CONFIG_SPI_STM32_INTERRUPT */
 
+#define SPI_STM32_DMA_DIRECTION_MEMORY_PERIPHERAL MEMORY_TO_PERIPHERAL
+#define SPI_STM32_DMA_DIRECTION_PERIPHERAL_MEMORY PERIPHERAL_TO_MEMORY
+
+#define SPI_STM32_DMA_ADDR_INC_MEMORY 1U
+#define SPI_STM32_DMA_ADDR_INC_PERIPHERAL 0U
+
 #define SPI_DMA_CHANNEL_INIT(index, dir, src_dev, dest_dev)			\
 	.dma_dev = DEVICE_DT_GET(STM32_DMA_CTLR(index, dir)),			\
 	.channel = DT_INST_DMAS_CELL_BY_NAME(index, dir, channel),		\
 	.dma_cfg = {								\
 		.dma_slot = STM32_DMA_SLOT(index, dir, slot),			\
-		.channel_direction = STM32_DMA_CONFIG_DIRECTION(		\
-					STM32_DMA_CHANNEL_CONFIG(index, dir)),	\
+		.channel_direction =						\
+			SPI_STM32_DMA_DIRECTION_##src_dev##_##dest_dev,		\
 		.source_data_size = STM32_DMA_CONFIG_##src_dev##_DATA_SIZE(	\
 					STM32_DMA_CHANNEL_CONFIG(index, dir)),	\
 		.dest_data_size = STM32_DMA_CONFIG_##dest_dev##_DATA_SIZE(	\
@@ -2234,10 +2240,8 @@ static int spi_stm32_init(const struct device *dev)
 		.dma_callback = dma_callback,					\
 		.block_count = 2,						\
 	},									\
-	.src_addr_increment = STM32_DMA_CONFIG_##src_dev##_ADDR_INC(		\
-				STM32_DMA_CHANNEL_CONFIG(index, dir)),		\
-	.dst_addr_increment = STM32_DMA_CONFIG_##dest_dev##_ADDR_INC(		\
-				STM32_DMA_CHANNEL_CONFIG(index, dir)),		\
+	.src_addr_increment = SPI_STM32_DMA_ADDR_INC_##src_dev,			\
+	.dst_addr_increment = SPI_STM32_DMA_ADDR_INC_##dest_dev,			\
 	.fifo_threshold = STM32_DMA_FEATURES_FIFO_THRESHOLD(		\
 				STM32_DMA_FEATURES(index, dir)),		\
 

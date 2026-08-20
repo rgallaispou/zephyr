@@ -576,6 +576,8 @@ static void video_stm32_dcmi_irq_config_func(const struct device *dev)
 	irq_enable(DT_INST_IRQN(0));
 }
 
+#define DCMI_STM32_DMA_DIRECTION_PERIPHERAL_MEMORY PERIPHERAL_TO_MEMORY
+
 #define DCMI_DMA_CHANNEL_INIT(index, src_dev, dest_dev)					\
 	.dma_dev = DEVICE_DT_GET(DT_INST_DMAS_CTLR_BY_IDX(index, 0)),			\
 	.channel = DT_INST_DMAS_CELL_BY_IDX(index, 0, channel),				\
@@ -583,8 +585,7 @@ static void video_stm32_dcmi_irq_config_func(const struct device *dev)
 				DT_PHANDLE_BY_IDX(DT_DRV_INST(0), dmas, 0)),		\
 	.cfg = {									\
 		.dma_slot = STM32_DMA_SLOT_BY_IDX(index, 0, slot),			\
-		.channel_direction = STM32_DMA_CONFIG_DIRECTION(			\
-			STM32_DMA_CHANNEL_CONFIG_BY_IDX(index, 0)),			\
+		.channel_direction = DCMI_STM32_DMA_DIRECTION_##src_dev##_##dest_dev,	\
 		.source_data_size = STM32_DMA_CONFIG_##src_dev##_DATA_SIZE(		\
 			STM32_DMA_CHANNEL_CONFIG_BY_IDX(index, 0)),			\
 		.dest_data_size = STM32_DMA_CONFIG_##dest_dev##_DATA_SIZE(		\

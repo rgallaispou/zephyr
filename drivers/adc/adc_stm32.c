@@ -2260,14 +2260,19 @@ static DEVICE_API(adc, api_stm32_driver_api) = {
 
 #if defined(CONFIG_ADC_STM32_DMA)
 
+#define ADC_STM32_DMA_DIRECTION_PERIPHERAL_MEMORY PERIPHERAL_TO_MEMORY
+
+#define ADC_STM32_DMA_ADDR_INC_PERIPHERAL 0U
+#define ADC_STM32_DMA_ADDR_INC_MEMORY 1U
+
 #define ADC_DMA_CHANNEL_INIT(index, src_dev, dest_dev)					\
 	.dma = {									\
 		.dma_dev = DEVICE_DT_GET(DT_INST_DMAS_CTLR_BY_IDX(index, 0)),		\
 		.channel = DT_INST_DMAS_CELL_BY_IDX(index, 0, channel),			\
 		.dma_cfg = {								\
 			.dma_slot = STM32_DMA_SLOT_BY_IDX(index, 0, slot),		\
-			.channel_direction = STM32_DMA_CONFIG_DIRECTION(		\
-				STM32_DMA_CHANNEL_CONFIG_BY_IDX(index, 0)),		\
+			.channel_direction =						\
+				ADC_STM32_DMA_DIRECTION_##src_dev##_##dest_dev,		\
 			.source_data_size = STM32_DMA_CONFIG_##src_dev##_DATA_SIZE(	\
 				STM32_DMA_CHANNEL_CONFIG_BY_IDX(index, 0)),		\
 			.dest_data_size = STM32_DMA_CONFIG_##dest_dev##_DATA_SIZE(	\
@@ -2282,10 +2287,8 @@ static DEVICE_API(adc, api_stm32_driver_api) = {
 			.dma_callback = dma_callback,					\
 			.block_count = 2,						\
 		},									\
-		.src_addr_increment = STM32_DMA_CONFIG_##src_dev##_ADDR_INC(		\
-			STM32_DMA_CHANNEL_CONFIG_BY_IDX(index, 0)),			\
-		.dst_addr_increment = STM32_DMA_CONFIG_##dest_dev##_ADDR_INC(		\
-			STM32_DMA_CHANNEL_CONFIG_BY_IDX(index, 0)),			\
+		.src_addr_increment = ADC_STM32_DMA_ADDR_INC_##src_dev,			\
+		.dst_addr_increment = ADC_STM32_DMA_ADDR_INC_##dest_dev,			\
 	}
 
 #else /* CONFIG_ADC_STM32_DMA */

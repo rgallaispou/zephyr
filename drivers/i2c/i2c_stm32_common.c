@@ -375,6 +375,9 @@ restore:
 
 #ifdef CONFIG_I2C_STM32_V2_DMA
 
+#define I2C_STM32_DMA_DIRECTION_MEMORY_PERIPHERAL MEMORY_TO_PERIPHERAL
+#define I2C_STM32_DMA_DIRECTION_PERIPHERAL_MEMORY PERIPHERAL_TO_MEMORY
+
 #define I2C_DMA_INIT(index, dir)								\
 	.dir##_dma = {										\
 		.dev_dma = COND_CODE_1(DT_INST_DMAS_HAS_NAME(index, dir),			\
@@ -405,8 +408,8 @@ void i2c_stm32_dma_rx_cb(const struct device *dma_dev __unused, void *user_data 
 	IF_ENABLED(DT_INST_DMAS_HAS_NAME(index, dir),						\
 		(.dma_##dir##_cfg = {								\
 			.dma_slot = STM32_DMA_SLOT(index, dir, slot),				\
-			.channel_direction = STM32_DMA_CONFIG_DIRECTION(			\
-				STM32_DMA_CHANNEL_CONFIG(index, dir)),				\
+			.channel_direction =							\
+				I2C_STM32_DMA_DIRECTION_##src##_##dest,				\
 			.cyclic =  STM32_DMA_CONFIG_CYCLIC(					\
 				STM32_DMA_CHANNEL_CONFIG(index, dir)),				\
 			.channel_priority = STM32_DMA_CONFIG_PRIORITY(				\
