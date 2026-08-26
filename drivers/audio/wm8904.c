@@ -5,13 +5,13 @@
  */
 #include <errno.h>
 
-#include <zephyr/device.h>
-#include <zephyr/drivers/i2c.h>
-#include <zephyr/drivers/clock_control.h>
 #include <zephyr/audio/codec.h>
+#include <zephyr/device.h>
 #include <zephyr/devicetree/clocks.h>
-
+#include <zephyr/drivers/clock_control.h>
+#include <zephyr/drivers/i2c.h>
 #include <zephyr/logging/log.h>
+
 LOG_MODULE_REGISTER(wolfson_wm8904, CONFIG_AUDIO_CODEC_LOG_LEVEL);
 
 #include "wm8904.h"

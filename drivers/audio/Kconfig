@@ -51,6 +51,7 @@ source "drivers/audio/Kconfig.tlv320dac"
 source "drivers/audio/Kconfig.wm8904"
 source "drivers/audio/Kconfig.wm8960"
 source "drivers/audio/Kconfig.wm8962"
+source "drivers/audio/Kconfig.wm8994"
 # zephyr-keep-sorted-stop
 
 endif # AUDIO_CODEC

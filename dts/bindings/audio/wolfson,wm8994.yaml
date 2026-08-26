@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: Copyright The Zephyr Project Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+description: Wolfson Microelectronics WM8994 Audio CODEC
+
+include: i2c-device.yaml
+
+compatible: "wolfson,wm8994"
+
+properties:
+  reg:
+    required: true
+
+  mclk-frequency:
+    type: int
+    default: 12288000
+    description: External MCLK frequency in Hz.
+
+  clock-source:
+    type: string
+    default: "MCLK1"
+    description: |
+      Codec clock source used for AIF1CLK.
+    enum:
+      - "MCLK1"
+      - "MCLK2"
+      - "FLL1"
+      - "FLL2"
