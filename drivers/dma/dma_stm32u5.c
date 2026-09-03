@@ -498,6 +498,14 @@ int dma_stm32_zcfg_to_halcfg(const struct device *dma, const struct dma_config *
 
 	return 0;
 }
+#else
+
+int dma_stm32_zcfg_to_halcfg(const struct device *dma, const struct dma_config *zephyr_config,
+			     hal_dma_handle_t *hal_config, uint16_t source_addr_adj,
+			     uint16_t dest_addr_adj)
+{
+	return 0;
+}
 #endif /* CONFIG_STM32_HAL2 */
 
 static int dma_stm32_disable_stream(DMA_TypeDef *dma, uint32_t id)
