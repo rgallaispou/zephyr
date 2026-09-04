@@ -184,6 +184,7 @@ static int stm32_dma_init(const struct device *dev)
 	}
 
 	hdma.Init.Request		= DMA_REQUEST_DCMI;
+	hdma.Init.Direction		= DMA_PERIPH_TO_MEMORY;
 	hdma.Instance			= STM32_DMA_GET_INSTANCE(dma->reg, dma->channel);
 
 	/* Initialize DMA HAL */

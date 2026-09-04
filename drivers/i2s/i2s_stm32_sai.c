@@ -311,15 +311,15 @@ static int sai_sub_dma_init(const struct device *dev)
 		return ret;
 	}
 
-#if defined(CONFIG_DMA_STM32U5)
-	hdma->Init.TransferAllocatedPort = DMA_SRC_ALLOCATED_PORT0 | DMA_DEST_ALLOCATED_PORT0;
-#endif
-
 	ret = dma_stm32_zcfg_to_halcfg(stream->dma_dev, dma_cfg, &hdma->Init,
 				       source_addr_adj, dest_addr_adj);
 	if (ret < 0) {
 		return ret;
 	}
+
+#if defined(CONFIG_DMA_STM32U5)
+	hdma->Init.TransferAllocatedPort = DMA_SRC_ALLOCATED_PORT0 | DMA_DEST_ALLOCATED_PORT0;
+#endif
 
 	hdma->Instance = STM32_DMA_GET_INSTANCE(stream->reg, stream->dma_channel);
 

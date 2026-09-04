@@ -219,6 +219,9 @@ int dma_stm32_zcfg_to_halcfg(const struct device *dma, const struct dma_config *
 #if defined(CONFIG_DMA_STM32_V1) && !defined(CONFIG_SOC_SERIES_STM32H7X)
 	hal_config->Channel = zephyr_config->dma_slot;
 #elif DT_HAS_COMPAT_STATUS_OKAY(st_stm32_dma_v2bis)
+	/* DMA under "st,stm32-dma-v2bis" compatible do not possess
+	 * DMA_InitTypeDef->Channel or DMA_InitTypeDef->Request.
+	 */
 #else
 	hal_config->Request = zephyr_config->dma_slot;
 #endif /* CONFIG_DMA_STM32_V1 */

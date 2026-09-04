@@ -2239,6 +2239,7 @@ static int flash_stm32_ospi_init(const struct device *dev)
 #if CONFIG_DMA_STM32U5
 	hdma.Init.TransferAllocatedPort = DMA_SRC_ALLOCATED_PORT0 | DMA_DEST_ALLOCATED_PORT1;
 #endif /* CONFIG_DMA_STM32U5 */
+
 	hdma.Instance = STM32_DMA_GET_INSTANCE(dev_data->dma.reg, dev_data->dma.channel);
 
 	/* Initialize DMA HAL */

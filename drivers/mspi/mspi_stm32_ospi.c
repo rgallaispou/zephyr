@@ -1026,15 +1026,15 @@ static int mspi_stm32_ospi_dma_setup(const struct mspi_stm32_conf *dev_cfg,
 		return ret;
 	}
 
-#ifdef CONFIG_DMA_STM32U5
-	hdma->Init.TransferAllocatedPort = DMA_SRC_ALLOCATED_PORT0 | DMA_DEST_ALLOCATED_PORT1;
-#endif
-
 	ret = dma_stm32_zcfg_to_halcfg(dev_data->dma.dev, &dma_cfg, &hdma->Init,
 				       DMA_ADDR_ADJ_NO_CHANGE, DMA_ADDR_ADJ_INCREMENT);
 	if (ret < 0) {
 		return ret;
 	}
+
+#ifdef CONFIG_DMA_STM32U5
+	hdma->Init.TransferAllocatedPort = DMA_SRC_ALLOCATED_PORT0 | DMA_DEST_ALLOCATED_PORT1;
+#endif
 
 	hdma->Instance = STM32_DMA_GET_INSTANCE(dev_data->dma.reg, dev_data->dma.channel);
 	__HAL_LINKDMA(&dev_data->hmspi.ospi, hdma, *hdma);
