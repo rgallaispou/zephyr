@@ -160,6 +160,54 @@
 			phys = <&otgfs_phy>;
 			status = "disabled";
 		};
+
+		mdf1: mdf@50025000 {
+			compatible = "st,stm32-mdf";
+			reg = <0x50025000 0x1000>;
+			clocks = <&rcc STM32_CLOCK(AHB1, 16)>;
+			clock-names = "pclk";
+			resets = <&rctl STM32_RESET(AHB1, 16)>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges;
+			status = "disabled";
+
+			filter@50025080 {
+				reg = <0x50025080 0x80>;
+				interrupts = <154 0>;
+				status = "disabled";
+			};
+
+			filter@50025100 {
+				reg = <0x50025100 0x80>;
+				interrupts = <155 0>;
+				status = "disabled";
+			};
+
+			filter@50025180 {
+				reg = <0x50025180 0x80>;
+				interrupts = <156 0>;
+				status = "disabled";
+			};
+
+			filter@50025200 {
+				reg = <0x50025200 0x80>;
+				interrupts = <157 0>;
+				status = "disabled";
+			};
+
+			filter@50025280 {
+				reg = <0x50025280 0x80>;
+				interrupts = <158 0>;
+				status = "disabled";
+			};
+
+			filter@50025300 {
+				reg = <0x50025300 0x80>;
+				interrupts = <159 0>;
+				status = "disabled";
+			};
+		};
 	};
 
 	/delete-node/ usbphy;
