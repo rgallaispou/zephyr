@@ -125,6 +125,8 @@
 #define SAI1_SEL(val)		STM32_DT_CLOCK_SELECT((val), 18, 16, CCIPR5_REG)
 #define SAI2_SEL(val)		STM32_DT_CLOCK_SELECT((val), 21, 19, CCIPR5_REG)
 #define LTDC_SEL(val)		STM32_DT_CLOCK_SELECT((val), 22, 22, CCIPR5_REG)
+#define ADF1_SEL(val)		STM32_DT_CLOCK_SELECT((val), 26, 24, CCIPR5_REG)
+#define MDF1_SEL(val)		STM32_DT_CLOCK_SELECT((val), 29, 27, CCIPR5_REG)
 #define CKPER_SEL(val)		STM32_DT_CLOCK_SELECT((val), 31, 30, CCIPR5_REG)
 
 /** BDCR devices */
