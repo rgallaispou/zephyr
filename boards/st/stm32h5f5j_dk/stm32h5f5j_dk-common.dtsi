@@ -69,6 +69,7 @@
 	};
 
 	aliases {
+		dmic0 = &pdm0;
 		led0 = &blue_led_0;
 		sw0 = &user_button;
 		pwm-led0 = &red_pwm_led;
@@ -103,7 +104,7 @@
 	div-m = <12>;
 	mul-n = <125>;
 	div-p = <2>;
-	div-q = <2>;
+	div-q = <1>;
 	div-r = <2>;
 	clocks = <&clk_hse>;
 	status = "okay";
@@ -117,6 +118,23 @@
 	div-r = <16>;
 	clocks = <&clk_hse>;
 	status = "okay";
+};
+
+/*
+ * MDF1:
+ * PLL3_Q selected as input audio clock.
+ *
+ * f_PLL3 = 2 GHz (48 MHz * 125 / 4)
+ * f_PLL3Q = 500 MHz
+ */
+&pll3 {
+	div-m = <3>;
+	mul-n = <125>;
+	div-p = <1>;
+	div-q = <1>;
+	div-r = <1>;
+	clocks = <&clk_hse>;
+	status = "disabled";
 };
 
 &rcc {
@@ -426,4 +444,21 @@ zephyr_jpegenc: &jpeg {
 	def-back-color-red = <0xff>;
 	def-back-color-green = <0xff>;
 	def-back-color-blue = <0xff>;
+};
+
+&mdf1 {
+	clocks = <&rcc STM32_CLOCK(AHB1, 16)>,
+		 <&rcc STM32_SRC_PLL1_Q MDF1_SEL(0)>;
+	clock-names = "pclk", "aclk";
+	status = "okay";
+
+	pdm0: filter@50025080 {
+		pinctrl-0 = <&mdf1_cki1_pc0
+			     &mdf1_sdi1_pc1>;
+		pinctrl-names = "default";
+		filter-order = <4>;
+		st,reshape-filter-decimation = <4>;
+		st,highpass-filter-cutoff = <0>;
+		status = "okay";
+	};
 };
