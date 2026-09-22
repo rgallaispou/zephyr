@@ -61,6 +61,7 @@
 	};
 
 	aliases {
+		dmic0 = &pdm0;
 		led0 = &blue_led_1;
 		led1 = &red_led_2;
 		sw0 = &user_button;
@@ -132,6 +133,17 @@
 	div-q = <2>;
 	div-r = <1>;
 	fracn = <5120>;
+	status = "okay";
+};
+
+&pll3 {
+	clocks = <&clk_hsi>;
+	div-m = <2>;
+	mul-n = <50>;
+	div-p = <12>;
+	div-q = <60>;
+	div-r = <1>;
+	fracn = <0>;
 	status = "okay";
 };
 
@@ -382,5 +394,24 @@ csi_interface: &dcmipp {
 		compatible = "microchip,lan8742";
 		reg = <0>;
 		reset-gpios = <&mcp23017 10 GPIO_ACTIVE_LOW>;
+	};
+};
+
+&dfsdm {
+	clocks = <&rcc STM32_CLOCK(APB2, 20)>,
+		<&rcc STM32_SRC_PLL3_Q SAI1_SEL(4)>;
+	clock-names = "pclk", "aclk";
+	status = "okay";
+
+	filter@0 {
+		pinctrl-0 = <&dfsdm1_ckout_pc3
+			     &dfsdm1_datin3_pf13>;
+		pinctrl-names = "default";
+		filter-order = <5>;
+		status = "okay";
+
+		channel@1 {
+			reg = <1>;
+		};
 	};
 };

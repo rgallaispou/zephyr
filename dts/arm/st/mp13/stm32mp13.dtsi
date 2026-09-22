@@ -864,6 +864,35 @@
 			alrm-exti-line = <19>;
 			status = "disabled";
 		};
+
+		dfsdm: audio-controller@4400d000 {
+			compatible = "st,stm32-dfsdm";
+			reg = <0x4400d000 0x400>;
+			clocks = <&rcc STM32_CLOCK(APB2, 20)>;
+			clock-names = "pclk";
+			resets = <&rctl STM32_RESET(APB2, 20)>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
+
+			pdm0: filter@0 {
+				compatible = "st,stm32-dfsdm-dmic";
+				reg = <0>;
+				interrupts = <GIC_SPI 140 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "disabled";
+			};
+
+			pdm1: filter@1 {
+				compatible = "st,stm32-dfsdm-dmic";
+				reg = <1>;
+				interrupts = <GIC_SPI 141 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "disabled";
+			};
+		};
 	};
 
 	gic: gic@a0021000 {
