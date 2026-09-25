@@ -13,6 +13,7 @@
  */
 
 #include "dma_stm32.h"
+#include "zephyr/toolchain.h"
 
 #include <zephyr/init.h>
 #include <zephyr/drivers/clock_control.h>
@@ -1041,10 +1042,6 @@ static int dma_stm32_init(const struct device *dev)
 		config->streams[i].busy = false;
 	}
 
-	((struct dma_stm32_data *)dev->data)->dma_ctx.magic = 0;
-	((struct dma_stm32_data *)dev->data)->dma_ctx.dma_channels = 0;
-	((struct dma_stm32_data *)dev->data)->dma_ctx.atomic = 0;
-
 	return 0;
 }
 
@@ -1067,6 +1064,31 @@ static int dma_stm32_get_status(const struct device *dev,
 	return 0;
 }
 
+static bool dma_stm32_chan_filter(const struct device *dev, uint32_t id, void *filter_param)
+{
+	const struct dma_context *dma_ctx = &dev->data.dma_ctx;
+
+	ARG_UNUSED(filter_param);
+
+	if (id >= dma_ctx->dma_channels) {
+		return -EINVAL;
+	}
+
+	//if (!filter_param) {
+	//	return false;
+	//}
+
+	//if (*(uint32_t *)filter_param != id) {
+	//	return false;
+	//}
+
+	if (atomic_test_bit(dma_ctx->atomic, id)) {
+		return false;
+	}
+
+	return true;
+}
+
 static DEVICE_API(dma, dma_funcs) = {
 	.reload		 = dma_stm32_reload,
 	.config		 = dma_stm32_configure,
@@ -1075,6 +1097,7 @@ static DEVICE_API(dma, dma_funcs) = {
 	.get_status	 = dma_stm32_get_status,
 	.suspend	 = dma_stm32_suspend,
 	.resume		 = dma_stm32_resume,
+	.chan_filter	 = dma_stm32_chan_filter,
 };
 
 /*
@@ -1148,7 +1171,14 @@ static DEVICE_API(dma, dma_funcs) = {
 		.linked_list_buffer = dma_stm32_linked_list_buffer##index	\
 	};									\
 										\
-	static struct dma_stm32_data dma_stm32_data_##index;			\
+	ATOMIC_DEFINE(dma_stm32_atomic_##index, DT_INST_PROP(n, dma_channels)); \
+	static struct dma_stm32_data dma_stm32_data_##index = {			\
+		.ctx = {							\
+			.magic = DMA_MAGIC,					\
+			.dma_channels = DT_INST_PROP(n, dma_channels),		\
+			.atomic = dma_stm32_atomic_##index,			\
+		},								\
+	};                                                                      \
 										\
 	DEVICE_DT_INST_DEFINE(index, dma_stm32_init, NULL,			\
 			      &dma_stm32_data_##index,				\
