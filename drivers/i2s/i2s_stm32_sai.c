@@ -979,7 +979,7 @@ static DEVICE_API(i2s, i2s_stm32_sai_api) = {
 #define SAI_SUB_DMA_CHANNEL_INIT(node, src, dest)                                                  \
 	.stream = {                                                                                \
 		.dma_dev = DEVICE_DT_GET(DT_DMAS_CTLR(node)),                                      \
-		.dma_channel = DT_DMAS_CELL_BY_IDX(node, 0, channel),                              \
+		.dma_channel = DT_DMAS_CELL_BY_IDX_OR(node, 0, channel, 0),                        \
 		.reg = (DMA_TypeDef *)DT_REG_ADDR(DT_PHANDLE_BY_IDX(node, dmas, 0)),               \
 		.dma_cfg = {                                                                       \
 			.dma_slot = STM32_DT_DMA_SLOT_BY_IDX(node, 0),                             \
