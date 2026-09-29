@@ -311,6 +311,12 @@ static int sai_sub_dma_init(const struct device *dev)
 		return -ENODEV;
 	}
 
+	stream->dma_channel = dma_request_channel(stream->dma_dev, NULL);
+	if (stream->dma_channel < 0) {
+		LOG_ERR("Failed to request DMA channel: %d", stream->dma_channel);
+		return -ENODEV;
+	}
+
 	/* Proceed to the minimum Zephyr DMA driver init */
 	dma_cfg->user_data = hdma;
 	if (dma_cfg->channel_direction == (enum dma_channel_direction)MEMORY_TO_PERIPHERAL) {

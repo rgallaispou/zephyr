@@ -13,7 +13,6 @@
  */
 
 #include "dma_stm32.h"
-#include "zephyr/toolchain.h"
 
 #include <zephyr/init.h>
 #include <zephyr/drivers/clock_control.h>
@@ -1033,9 +1032,10 @@ static int dma_stm32_get_status(const struct device *dev,
 	return 0;
 }
 
-static bool dma_stm32_chan_filter(const struct device *dev, uint32_t id, void *filter_param)
+static bool dma_stm32_chan_filter(const struct device *dev, int id, void *filter_param)
 {
-	const struct dma_context *dma_ctx = &dev->data.dma_ctx;
+	const struct dma_stm32_data *data = dev->data;
+	const struct dma_context *dma_ctx = &data->dma_ctx;
 
 	if (id >= dma_ctx->dma_channels) {
 		return -EINVAL;
@@ -1140,11 +1140,13 @@ static DEVICE_API(dma, dma_funcs) = {
 		.linked_list_buffer = dma_stm32_linked_list_buffer##index	\
 	};									\
 										\
-	ATOMIC_DEFINE(dma_stm32_atomic_##index, DT_INST_PROP(n, dma_channels)); \
+	ATOMIC_DEFINE(dma_stm32_atomic_##index,					\
+		      DT_INST_PROP(index, dma_channels));			\
+										\
 	static struct dma_stm32_data dma_stm32_data_##index = {			\
-		.ctx = {							\
+		.dma_ctx = {							\
 			.magic = DMA_MAGIC,					\
-			.dma_channels = DT_INST_PROP(n, dma_channels),		\
+			.dma_channels = DT_INST_PROP(index, dma_channels),	\
 			.atomic = dma_stm32_atomic_##index,			\
 		},								\
 	};                                                                      \
