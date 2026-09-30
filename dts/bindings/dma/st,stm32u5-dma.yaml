@@ -46,7 +46,7 @@ examples:
     /* Definition example: STM32U5 SoC DTSI */
     gpdma1: dma@40020000 {
       compatible = "st,stm32u5-dma";
-      #dma-cells = <3>;
+      #dma-cells = <2>;
       reg = <0x40020000 DT_SIZE_K(1)>;
       clocks = <&rcc STM32_CLOCK(AHB1, 0)>;
       interrupts = <29 0>, <30 0>, <31 0>, <32 0>,

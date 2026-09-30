@@ -1192,7 +1192,7 @@
 
 		gpdma1: dma@40021000 {
 			compatible = "st,stm32u5-dma";
-			#dma-cells = <3>;
+			#dma-cells = <2>;
 			reg = <0x40021000 0x1000>;
 			clocks = <&rcc STM32_CLOCK(AHB1, 4)>;
 			interrupts = <39 0>, <40 0>, <41 0>, <42 0>, <43 0>, <44 0>, <45 0>, <46 0>,
