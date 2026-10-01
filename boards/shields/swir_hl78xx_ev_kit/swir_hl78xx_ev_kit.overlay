@@ -15,8 +15,8 @@
 &usart2 {
 	pinctrl-0 = <&usart2_tx_pa2 &usart2_rx_pa3 &usart2_rts_pd4 &usart2_cts_pd3>;
 	pinctrl-1 = <&analog_pa2 &analog_pa3 &analog_pd4 &analog_pd3>;
-	dmas = <&gpdma1 0 27 STM32_DMA_PERIPH_TX
-		&gpdma1 1 26 STM32_DMA_PERIPH_RX>;
+	dmas = <&gpdma1 0 27 0
+		&gpdma1 1 26 0>;
 	dma-names = "tx", "rx";
 	pinctrl-names = "default", "sleep";
 	current-speed = <115200>;
