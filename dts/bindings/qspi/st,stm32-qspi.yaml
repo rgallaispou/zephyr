@@ -35,10 +35,10 @@ properties:
 
       For example with DMA 2 for TX/RX on QSPI like stm32l496 (no 'features')
          /* select DMA2 channel 7 request 3 for QUADSPI */
-         dmas = <&dma2 7 3 (STM32_DMA_PERIPH_TX | STM32_DMA_PRIORITY_HIGH)>;
+         dmas = <&dma2 7 3 STM32_DMA_PRIORITY_HIGH>;
       For example with a DMAMUX for TX/RX on QSPI like stm32wb55  (no 'features')
          /* select DMA2 channel 0, request 20 for QUADSPI */
-         dmas = <&dma2 0 20 (STM32_DMA_PERIPH_TX | STM32_DMA_PRIORITY_HIGH)>;
+         dmas = <&dma2 0 20 STM32_DMA_PRIORITY_HIGH>;
 
   dma-names:
     description: |
