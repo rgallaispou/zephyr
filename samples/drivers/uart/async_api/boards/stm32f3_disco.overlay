@@ -5,7 +5,7 @@
  */
 
 dut: &usart1 {
-	dmas = <&dma1 4 STM32_DMA_PERIPH_TX>,
-	       <&dma1 5 STM32_DMA_PERIPH_RX>;
+	dmas = <&dma1 4 0>,
+	       <&dma1 5 0>;
 	dma-names = "tx", "rx";
 };
