@@ -13,8 +13,8 @@
  * Short Pin PB9 to PB11, and PB8 to PB10, for the test to pass.
  */
 
-#define IC2_TEST_0_DMA_TX <&dma1 6 6 STM32_DMA_PERIPH_TX>
-#define IC2_TEST_0_DMA_RX <&dma1 7 6 STM32_DMA_PERIPH_RX>
+#define IC2_TEST_0_DMA_TX <&dma1 6 6 0>
+#define IC2_TEST_0_DMA_RX <&dma1 7 6 0>
 
 i2c_test_0: &i2c1 {
 	dmas = IC2_TEST_0_DMA_TX, IC2_TEST_0_DMA_RX;
@@ -27,8 +27,8 @@ i2c_test_0: &i2c1 {
 	};
 };
 
-#define IC2_TEST_1_DMA_TX <&dma1 4 7 STM32_DMA_PERIPH_TX>
-#define IC2_TEST_1_DMA_RX <&dma1 5 7 STM32_DMA_PERIPH_RX>
+#define IC2_TEST_1_DMA_TX <&dma1 4 7 0>
+#define IC2_TEST_1_DMA_RX <&dma1 5 7 0>
 
 i2c_test_1: &i2c2 {
 	dmas = IC2_TEST_1_DMA_TX, IC2_TEST_1_DMA_RX;
