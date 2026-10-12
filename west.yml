@@ -417,6 +417,11 @@ manifest:
       revision: 8b13d0b709314b7de6cb5877c286d52e71095cc8
       path: modules/lib/zephyr-xenlib
   # zephyr-keep-sorted-stop
+    - name: zephyr-stm32-mw-isp
+      url: https://github.com/stm32-hotspot/zephyr-stm32-mw-isp.git
+      revision: main
+      path: st/lib/zephyr-stm32-mw-isp
+      submodules: true
 
   self:
     path: zephyr
