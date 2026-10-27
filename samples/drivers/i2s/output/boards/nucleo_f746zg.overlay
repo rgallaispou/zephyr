@@ -1,0 +1,34 @@
+/ {
+	aliases {
+		i2s-tx = &sai1_a;
+	};
+};
+
+&pllsai {
+    div-m = <4>;
+    mul-n = <192>;
+    div-q = <2>;
+    post-div-q = <17>;
+    clocks = <&clk_hse>;
+    status = "okay";
+};
+
+&dma2 {
+	status = "okay";
+};
+
+&sai1 {
+	status = "okay";
+};
+
+&sai1_a {
+	pinctrl-0 = <&sai1_mclk_a_pe2
+		     &sai1_sd_a_pe6
+		     &sai1_fs_a_pe4
+		     &sai1_sck_a_pe5>;
+	pinctrl-names = "default";
+	status = "okay";
+	mclk-enable;
+	mclk-divider = "div-256";
+	dma-names = "tx";
+};
