@@ -11,24 +11,23 @@
 
 /*
  * MDF1:
- * PLL1_Q selected as input audio clock.
+ * PLL3_P selected as input audio clock.
  *
- * f_PLL1 = 280 MHz (48 MHz * 105 / 18)
- * f_PLL1Q = 35 MHz (280 MHz / 8)
+ * f_PLL3_p = 280 MHz (48 MHz * 105 / (18 * 1))
  */
 &pll3 {
 	div-m = <18>;
 	mul-n = <105>;
-	div-p = <8>;
-	div-q = <8>;
-	div-r = <8>;
+	div-p = <1>;
+	div-q = <1>;
+	div-r = <1>;
 	clocks = <&clk_hse>;
 	status = "okay";
 };
 
 &mdf1 {
 	clocks = <&rcc STM32_CLOCK(AHB1, 16)>,
-		<&rcc STM32_SRC_PLL1_Q MDF1_SEL(2)>;
+		<&rcc STM32_SRC_PLL3_P MDF1_SEL(2)>;
 	clock-names = "pclk", "aclk";
 	status = "okay";
 

@@ -93,7 +93,7 @@ extern "C" {
  * @param ... A string optionally containing printk valid conversion specifier,
  * followed by as many values as specifiers.
  */
-#define LOG_DBG(...) Z_LOG(LOG_LEVEL_DBG, __VA_ARGS__)
+#define LOG_DBG(...) Z_LOG(LOG_LEVEL_INF, __VA_ARGS__)
 
 /**
  * @brief Writes a WARNING level message to the log on the first execution only.
