@@ -1,0 +1,16 @@
+# Copyright (c) 2026
+# SPDX-License-Identifier: Apache-2.0
+
+config ISM330DLC
+	bool "ISM330DLC I2C accelerometer and gyroscope"
+	default y
+	depends on DT_HAS_ST_ISM330DLC_ENABLED
+	depends on ZEPHYR_HAL_ST_MODULE
+	select I2C
+	select HAS_STMEMSC
+	select USE_STDC_ISM330DLC
+	help
+	  Enable polling support for the ISM330DLC accelerometer and gyroscope.
+	  Both sensors run at 104 Hz, with fixed ranges of +/-2 g and
+	  +/-250 degrees/second. FIFO, interrupts and runtime configuration
+	  are not supported.
