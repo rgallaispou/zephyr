@@ -1,0 +1,11 @@
+# Copyright (c) 2026
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  STMicroelectronics ISM330DLC 6-axis IMU accessed through I2C.
+  The driver supports polling acceleration and angular velocity at 104 Hz
+  with fixed full-scale ranges of +/-2 g and +/-250 degrees/second.
+
+compatible: "st,ism330dlc"
+
+include: ["sensor-device.yaml", "i2c-device.yaml"]
