@@ -13,6 +13,10 @@
 		zephyr,camera = &csi_capture_port;
 	};
 
+	aliases {
+		accel0 = &ism330dlc;
+	};
+
 	imx335_input_clock: imx335-input-clock {
 		compatible = "fixed-clock";
 		clock-frequency = <24000000>;
@@ -53,6 +57,12 @@
 		compatible = "st,vl53l5cx";
 		friendly-name = "mb1854_vl53l5cx";
 		reg = <0x29>;
+	};
+
+	ism330dlc: imu@6a {
+		compatible = "st,ism330dlc";
+		friendly-name = "mb1854_ism330dlc";
+		reg = <0x6a>;
 	};
 };
 
