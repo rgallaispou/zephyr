@@ -12,8 +12,6 @@ LOG_MODULE_REGISTER(spi_stm32, CONFIG_SPI_LOG_LEVEL);
 #include <zephyr/cache.h>
 #include <zephyr/drivers/clock_control/stm32_clock_control.h>
 #include <zephyr/drivers/clock_control.h>
-#include <zephyr/drivers/dma.h>
-#include <zephyr/drivers/dma/dma_stm32.h>
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/drivers/spi.h>
 #include "spi_rtio.h"
@@ -28,6 +26,11 @@ LOG_MODULE_REGISTER(spi_stm32, CONFIG_SPI_LOG_LEVEL);
 #include <zephyr/rtio/rtio.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/toolchain.h>
+
+#ifdef CONFIG_SPI_STM32_DMA
+#include <zephyr/drivers/dma.h>
+#include <zephyr/drivers/dma/dma_stm32.h>
+#endif /* CONFIG_SPI_STM32_DMA */
 
 #include <soc.h>
 #include <stm32_bitops.h>
