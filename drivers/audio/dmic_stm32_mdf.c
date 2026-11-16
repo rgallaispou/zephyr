@@ -39,6 +39,17 @@ struct dmic_stm32_mdf_scales {
 	int gain_db;
 };
 
+struct stream {
+	const struct device *dma;
+	uint32_t channel; /* stores the channel for dma or mux */
+	struct dma_config dma_cfg;
+	struct dma_block_config dma_blk_cfg;
+	uint8_t priority;
+	bool src_addr_increment;
+	bool dst_addr_increment;
+	int fifo_threshold;
+};
+
 struct dmic_stm32_mdf_data {
 	MDF_HandleTypeDef hmdf;
 	MDF_FilterConfigTypeDef filter_config;
@@ -322,6 +333,10 @@ static void dmic_stm32_mdf_purge_rx_queue(struct dmic_stm32_mdf_data *data)
 	}
 }
 
+static void dmic_stm32_mdf_dma_callback()
+{
+}
+
 static int dmic_stm32_mdf_start(const struct device *dev)
 {
 	struct dmic_stm32_mdf_data *data = dev->data;
@@ -333,22 +348,68 @@ static int dmic_stm32_mdf_start(const struct device *dev)
 	 */
 	dmic_stm32_mdf_purge_rx_queue(data);
 
-	/* Allocate memory slab */
-	ret = k_mem_slab_alloc(data->mem_slab, &data->buffer, K_NO_WAIT);
-	if (ret < 0) {
-		LOG_ERR("Could not allocate RX buffer. Dropping RX data: %d", ret);
-		data->state = DMIC_STATE_ERROR;
-		return ret;
-	}
-	data->buf_pos = 0;
+	if (drv_cfg->dma_dev != NULL) {
+		/* Handle DMA here */
+		data->dma_block.block_size = data->dma_half_block_size_in_bytes * 2;
+		data->dma_block.source_address = (uint32_t)&data->hfilter.Instance->FLTRDATAR;
+		data->dma_block.dest_address = (uint32_t)data->dma_buffer;
+		data->dma_block.source_addr_adj = DMA_ADDR_ADJ_NO_CHANGE;
+		data->dma_block.dest_addr_adj = DMA_ADDR_ADJ_INCREMENT;
+		data->dma_block.source_reload_en = 1;
+		data->dma_block.dest_reload_en = 1;
+		data->dma_block.next_block = NULL;
 
-	/* Start MDF acquisition */
-	hal_ret = HAL_MDF_AcqStart_IT(&data->hmdf, &data->filter_config);
-	if (hal_ret != HAL_OK) {
-		LOG_ERR("Failed to start MDF %s in IRQ mode", dev->name);
-		k_mem_slab_free(data->mem_slab, data->buffer);
-		data->buffer = NULL;
-		return -EIO;
+		struct dma_config dma_cfg = {
+			.channel_direction = PERIPHERAL_TO_MEMORY,
+			.source_data_size = 4,
+			.dest_data_size = 4,
+			.source_burst_length = 4,
+			.dest_burst_length = 4,
+			.block_count = 1,
+			.dma_slot = drv_cfg->dma_slot,
+			.head_block = &data->dma_block,
+			.dma_callback = dmic_stm32_mdf_dma_callback,
+			.user_data = (void *)dev,
+			.cyclic = 1,
+			.half_complete_callback_en = 1,
+		};
+
+		ret = dma_config(drv_cfg->dma_dev, drv_cfg->dma_channel, &dma_cfg);
+		if (ret < 0) {
+			LOG_ERR("Failed to configure DMA: %d", ret);
+			return ret;
+		}
+
+		ret = dma_start(drv_cfg->dma_dev, drv_cfg->dma_channel);
+		if (ret < 0) {
+			LOG_ERR("Failed to start DMA: %d", ret);
+			return ret;
+		}
+
+		/* RDMAEN is already set, just trigger the basic software start */
+		hal_ret = HAL_DFSDM_FilterRegularStart(&data->hfilter);
+		if (hal_ret != HAL_OK) {
+			LOG_ERR("Failed to start DFSDM filter");
+			return -EIO;
+		}
+	} else {
+		/* Allocate memory slab */
+		ret = k_mem_slab_alloc(data->mem_slab, &data->buffer, K_NO_WAIT);
+		if (ret < 0) {
+			LOG_ERR("Could not allocate RX buffer. Dropping RX data: %d", ret);
+			data->state = DMIC_STATE_ERROR;
+			return ret;
+		}
+		data->buf_pos = 0;
+
+		/* Start MDF acquisition */
+		hal_ret = HAL_MDF_AcqStart_IT(&data->hmdf, &data->filter_config);
+		if (hal_ret != HAL_OK) {
+			LOG_ERR("Failed to start MDF %s in IRQ mode", dev->name);
+			k_mem_slab_free(data->mem_slab, data->buffer);
+			data->buffer = NULL;
+			return -EIO;
+		}
 	}
 
 	data->state = DMIC_STATE_ACTIVE;
@@ -362,7 +423,13 @@ static int dmic_stm32_mdf_stop(const struct device *dev)
 	HAL_StatusTypeDef hal_ret;
 
 	/* Stop MDF acquisition */
-	hal_ret = HAL_MDF_AcqStop_IT(&data->hmdf);
+	if (drv_dma != NULL) {
+		hal_ret = HAL_MDF_AcqStop(&data->mdf);
++		dma_stop(drv_cfg->dma_dev, drv_cfg->dma_channel);
+	} else {
+		hal_ret = HAL_MDF_AcqStop_IT(&data->hmdf);
+	}
+
 	if (hal_ret != HAL_OK) {
 		LOG_ERR("Failed to stop MDF in IRQ mode");
 		return -EIO;
@@ -765,6 +832,47 @@ static int dmic_stm32_mdf_device_init(const struct device *dev)
 	return pm_device_driver_init(dev, dmic_stm32_mdf_pm_action);
 }
 
+#ifdef CONFIG_DMIC_STM32_MDF_DMA
+
+#define MDF_DMA_CHANNEL_INIT(flt, src, dest)                                                       \
+	.dma = {                                                                                   \
+		.dma_dev = DEVICE_DT_GET(DT_DMAS_CTLR_BY_IDX(flt 0)),                              \
+		.channel = DT_DMAS_CELL_BY_IDX(flt, 0, channel),                                   \
+		.dma_cfg = {                                                                       \
+			.dma_slot = STM32_DT_DMA_SLOT_BY_IDX(flt, 0),                              \
+			.channel_direction = STM32_DMA_CONFIG_DIRECTION(                           \
+				STM32_DT_DMA_CHANNEL_CONFIG_BY_IDX(flt, 0)),                       \
+			.source_data_size = STM32_DMA_CONFIG_##src##_DATA_SIZE(                    \
+				STM32_DT_DMA_CHANNEL_CONFIG_BY_IDX(flt, 0)),                       \
+			.dest_data_size = STM32_DMA_CONFIG_##dest##_DATA_SIZE(                     \
+				STM32_DT_DMA_CHANNEL_CONFIG_BY_IDX(flt, 0)),                       \
+			/* single transfers (burst length = data size) */                          \
+			.source_burst_length = STM32_DMA_CONFIG_##src##_DATA_SIZE(                 \
+				STM32_DT_DMA_CHANNEL_CONFIG_BY_IDX(flt, 0)),                       \
+			.dest_burst_length = STM32_DMA_CONFIG_##dest##_DATA_SIZE(                  \
+				STM32_DT_DMA_CHANNEL_CONFIG_BY_IDX(flt, 0)),                       \
+			.channel_priority = STM32_DMA_CONFIG_PRIORITY(                             \
+				STM32_DT_DMA_CHANNEL_CONFIG_BY_IDX(flt, 0)),                       \
+			.dma_callback = dma_callback,                                              \
+			.block_count = 2,                                                          \
+		},                                                                                 \
+		.src_addr_increment = STM32_DMA_CONFIG_##src##_ADDR_INC(                           \
+			STM32_DT_DMA_CHANNEL_CONFIG_BY_IDX(flt, 0)),                               \
+		.dst_addr_increment = STM32_DMA_CONFIG_##dest##_ADDR_INC(                          \
+			STM32_DT_DMA_CHANNEL_CONFIG_BY_IDX(flt, 0)),                               \
+	}
+
+#define MDF_DMA_CHANNEL(flt, src, dest)                                                            \
+	.dma = {                                                                                   \
+		COND_CODE_1(DT_DMAS_HAS_IDX(flt, 0),                                               \
+			    (MDF_DMA_CHANNEL_INIT(flt, src, dest)),                                \
+			    (NULL))                                                                \
+	},
+#else
+#define MDF_DMA_CHANNEL_INIT(flt, src, dest)
+#define MDF_DMA_CHANNEL(flt, src, dest)
+#endif /* CONFIG_DMIC_STM32_MDF_DMA */
+
 #define RESHAPE_FILTER(flt)                                                                        \
 	.ReshapeFilter = {                                                                         \
 		.Activation = DT_NODE_HAS_PROP(flt, st_reshape_filter_decimation),                 \
@@ -837,6 +945,7 @@ static int dmic_stm32_mdf_device_init(const struct device *dev)
 		},                                                                                 \
 		.filter_config = config_##flt,                                                     \
 		.rx_queue = &dmic_stm32_mdf_msgq_##flt,                                            \
+		MDF_DMA_CHANNEL(flt, PERIPHERAL, MEMORY)                                           \
 	};                                                                                         \
                                                                                                    \
 	DEVICE_DT_DEFINE(flt, dmic_stm32_mdf_init, NULL, &dmic_stm32_mdf_data_##flt,               \
