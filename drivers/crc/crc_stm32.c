@@ -7,7 +7,6 @@
 
 #include <soc.h>
 #include <stm32_ll_crc.h>
-#include <stm32_ll_dma.h>
 
 #include <errno.h>
 
@@ -15,10 +14,14 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/clock_control/stm32_clock_control.h>
 #include <zephyr/drivers/crc.h>
-#include <zephyr/drivers/dma.h>
-#include <zephyr/drivers/dma/dma_stm32.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/bit_rev.h>
+
+#if defined(CONFIG_CRC_STM32_DMA)
+#include <stm32_ll_dma.h>
+#include <zephyr/drivers/dma.h>
+#include <zephyr/drivers/dma/dma_stm32.h>
+#endif /* CONFIG_CRC_STM32_DMA */
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(crc_stm32, CONFIG_CRC_LOG_LEVEL);
