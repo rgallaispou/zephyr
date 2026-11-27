@@ -122,7 +122,7 @@
 /** @endcond */
 
 /** @cond INTERNAL_HIDDEN */
-#ifdef CONFIG_STM32_HAL2
+#if defined(CONFIG_STM32_HAL2) && defined(CONFIG_USE_STM32_HAL_DMA)
 /**
  * @brief Convert Zephyr DMA configuration to STM32 HAL DMA init structure.
  *
@@ -147,7 +147,7 @@
 int dma_stm32_configure_zcfg(const struct device *dma, const struct dma_config *zephyr_config,
 			     hal_dma_handle_t *hdma, hal_dma_src_addr_increment_t source_addr_adj,
 			     hal_dma_dest_addr_increment_t dest_addr_adj);
-#else /* CONFIG_STM32_HAL2 */
+#else /* CONFIG_STM32_HAL2 && CONFIG_USE_STM32_HAL_DMA */
 /**
  * @brief Convert Zephyr DMA configuration to STM32 HAL DMA init structure.
  *
@@ -174,7 +174,7 @@ int dma_stm32_configure_zcfg(const struct device *dma, const struct dma_config *
 int dma_stm32_zcfg_to_halcfg(const struct device *dma, const struct dma_config *zephyr_config,
 			     DMA_InitTypeDef *hal_config, uint16_t source_addr_adj,
 			     uint16_t dest_addr_adj);
-#endif /* CONFIG_STM32_HAL2 */
+#endif /* CONFIG_STM32_HAL2 && CONFIG_USE_STM32_HAL_DMA */
 /** @endcond */
 
 #endif /* ZEPHYR_INCLUDE_DRIVERS_DMA_DMA_STM32_H_ */
